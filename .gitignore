@@ -1,0 +1,8 @@
+# Model file
+/inference/model_R.pt
+
+# inference
+/inference/data
+/inference/image
+/inference/label
+/inference/videos
