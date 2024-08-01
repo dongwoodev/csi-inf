@@ -26,8 +26,8 @@ if not os.path.exists(labelFolderPath):
 
 class CSVLabelConverter:
     def __init__(self, path):
-        self.datas = glob.glob(f"{path}" + "/*.csv")
-        self.checked = glob.glob(f"{path}" + "/*_checked.csv")
+        self.datas = glob.glob(f"{path}" + "/*_.csv")
+        self.checked = glob.glob(f"{path}" + "/*_r.csv")
 
     @staticmethod
     def preprocess(csi_cols: str):
@@ -110,7 +110,6 @@ class CSVLabelConverter:
         for data, checked in zip(self.datas, self.checked): # O(num of CSVs)
             df = pd.read_csv(data) # load csv file.
 
-
             ck_column_names = ['timestamp', 'nums', 'N1', 'N2', 'location', 'skeleton']
             checked = pd.read_csv(checked, header=None, names=ck_column_names) # load checked file (N of humans, Location)
             checked = self.n_of_human(data=checked) # N of human, location preprocessing
@@ -159,8 +158,8 @@ def merge_data():
     loc_data = pd.read_csv(loc_data, encoding='utf-8')
 
 
-    csi_data['start_time'] = pd.to_datetime(csi_data['start_time'])
-    csi_data['end_time'] = pd.to_datetime(csi_data['end_time'])
+    # csi_data['start_time'] = pd.to_datetime(csi_data['start_time'])
+    # csi_data['end_time'] = pd.to_datetime(csi_data['end_time'])
     loc_data['timestamp'] = pd.to_datetime(loc_data['timestamp'])
 
     # # for save N of human csv (labeling) #
@@ -181,7 +180,7 @@ def merge_data():
         sit = csi_data.loc[inf_cnt, 'sit']
         stand = csi_data.loc[inf_cnt, 'stand']
         label = csi_data.loc[inf_cnt, 'label']
-
+        print(f"{round(inf_cnt / (len(csi_data) * 0.01))}%")
         a = [humans for loc_time, humans in zip(loc_data['timestamp'], loc_data['nums']) if pd.to_datetime(start_time) <= pd.to_datetime(loc_time) <= pd.to_datetime(end_time)]
         human_value = int(round(sum(a) / len(a),0)) # calculate N of Human (Data range 2 Sec)
 
