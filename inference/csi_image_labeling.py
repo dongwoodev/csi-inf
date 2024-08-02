@@ -58,7 +58,7 @@ class ImageLabeling:
         - return
             - saved img to `/video`
         """
-        for image in image_list:
+        for i , image in enumerate(image_list):
             
             saved_file_name = image.split('/')[3].split('__')[0] # 2024-06-21_10:23:56.04
             #saved_file_name = image.split('/')[2].split('__')[0] # inf_jpg
@@ -91,6 +91,8 @@ class ImageLabeling:
             # Text
             draw.text((0, 0), text, (255,255,255), font) # position , text, color
             pil_image.save("./video/" + f"{saved_file_name}.jpg")
+            # pil_image.save("./video/" + f"{i:03}.jpg")  # ffmpeg -r 30 -i "%03d.jpg" -vcodec libx264 "test.mp4"     
+            
             # pil_image.show()
 
     def save_image(self):
