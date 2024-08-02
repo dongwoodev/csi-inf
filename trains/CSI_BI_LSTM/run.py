@@ -74,6 +74,7 @@ def main():
     # args.model = "BiLSTM"
 
     train_loader, test_loader, model, train_epoch = load_data_n_model(args.model, root)
+    arcfaceloss = ArcFaceLoss(num_classes=3, embedding_size=64, margin=0.3, scale=30.0)
     criterion = nn.CrossEntropyLoss()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -83,7 +84,7 @@ def main():
         tensor_loader= train_loader,
         num_epochs= train_epoch,
         learning_rate=1e-3,
-        criterion=criterion,
+        criterion=arcfaceloss,
         device=device
          )
     test(
