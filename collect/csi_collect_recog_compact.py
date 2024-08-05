@@ -9,7 +9,6 @@ CSI-Data Collecting Program
 
 # Standard Library
 import sys, os
-from os import path
 from io import StringIO
 import csv
 import json
@@ -17,22 +16,17 @@ import argparse
 import serial
 import datetime
 import multiprocessing
-import glob
 
 # Third-party
-import pandas as pd
 import numpy as np
 import cv2
-import subprocess as sp
 
 # GUI library
-from PyQt5 import QtCore
 from PyQt5.QtCore import QTimer, QDateTime
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QRadioButton, QPushButton, QLabel, QButtonGroup
 from PyQt5.Qt import *
 
 import pyqtgraph as pq
-from pyqtgraph import PlotWidget
  
 # Filtering Library
 from scipy.signal import butter, filtfilt
@@ -45,7 +39,6 @@ ref : https://docs.ultralytics.com/tasks/pose/
 
 """
 from ultralytics import YOLO
-import torch
 
 # GLOBAL VARIABLES #
 
@@ -132,7 +125,7 @@ class csi_data_graphical_window(QMainWindow):
         self.buttonGroup.buttonClicked.connect(self.onRadioButtonClicked)
 
         # SETTING START BUTTON
-        self.pushButton = QPushButton("START")
+        self.pushButton = QPushButton("COLLECTING START")
         self.pushButton.setStyleSheet("background-color: blue; color: white;")  # 초기 색상 설정
         self.pushButton.setMaximumHeight(80)
         self.pushButton.clicked.connect(self.toggleButtonState)
@@ -404,7 +397,6 @@ class SubThread(QThread):
 
     Args:
         - serial_port : 연결할 포트 /dev/ttyACM0
-        - save_file_name : 저장할 파일 명칭
 
     run() :
         - csi 데이터 작성하기
@@ -427,72 +419,82 @@ class SubThread(QThread):
     def run(self):
         csi_data_read_parse(self.ser, self.collectingData, self.labelDict)
 
+
+
 class Camera():
+    """
+    ### Img data have collect, but inferenced data haven't collect.
+    - Active Acquire
+    - Passive Acqire (09:30, 12:30, 17:30, 20:30)
+    """
     def __init__(self):
-
-        # 이미지 디렉토리 설정
+        # Image Dirs Settings
         self.photosFolderPath = "/data/csi-data/Photos"
-        if not os.path.exists(self.photosFolderPath):
-            os.makedirs(self.photosFolderPath)
+        os.makedirs(self.photosFolderPath, exist_ok=True)
 
-        # 카메라 설정
+        # Camera Settings
         self.camA= cv2.VideoCapture('/dev/video0') # CamA
         self.camB= cv2.VideoCapture('/dev/video2') # CamB
-        # 만약 이전 오류로 인해 캠이 열리지 않는다면 0 대신 1(외부 카메라) 혹은 '/dev/video1'(문자열)로 넣어주면 됩니다.
-        
-        # 카메라 화질 설정
-        self.camA.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.camA.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        self.camB.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.camB.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        # If the Cams doesn't open due to a error, put in VideoCapture '1' or '/dev/video1' instead of '0'.
+
+        self.set_camera_resolution(self.camA)
+        self.set_camera_resolution(self.camB)        
 
         self.record = False
-        self.labelDict = {0:'', 1:'Steady State', 2:'Stand', 3:'Sit'} 
-        self.model = YOLO("./yolov8s-pose.pt") # YOLOv8 모델
+        self.model = YOLO("./yolov8x-pose.pt") # YOLOv8 Model
+
+    def set_camera_resolution(self, camera, width=1280, height=720):
+        """### Camera FRAME WIDTH, HEIGHT(1280x720)"""
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
 
     def recording(self, isStarted, isProcess):
         try:
             while True:
-                # 프레임은 계속 받음
+                # Frames continued collect
                 retA, frameA = self.camA.read()
                 retB, frameB = self.camB.read()
 
+                # Inference Human's Existion.
                 resultA = self.model.predict(frameA, iou=0.5, conf=0.5)[0]
                 resultB = self.model.predict(frameB, iou=0.5, conf=0.5)[0]
 
                 current_minute = datetime.datetime.now().minute
                 current_hour = datetime.datetime.now().hour
 
-                # 사람의 수가 한 명 이상의 경우
+                # Start Collecting Image data
                 if ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30,31] and current_hour in [9, 13, 17, 20])) and (isProcess.value == False):
-                    isStarted.value = True # CSI 데이터 수집 ON
+                    isStarted.value = True # Start Collecting CSI data through img
                     
-                    # 이미지 디렉토리, 프로세스 디렉토리 생성
+                    # Create Detailed Image Directory
                     timestamp_dirs = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
-                    if not os.path.exists(self.photosFolderPath + f"/{timestamp_dirs}") and not os.path.exists(self.CheckedFolderPath + f"/{timestamp_dirs}"):
-                        os.makedirs(self.photosFolderPath + f"/{timestamp_dirs}")
-                        os.makedirs(self.CheckedFolderPath + f"/{timestamp_dirs}")
+                    os.makedirs(self.photosFolderPath + f"/{timestamp_dirs}", exist_ok=True)       
 
-                    # CSV 파일 열기
-                    writed = csv.writer(open(f"{self.CheckedFolderPath}/{timestamp_dirs}/{timestamp_dirs}.csv",'w')) # create csv file for labeling        
-
-                # 현재 데이터를 수집 중인 상태
+                # Collecting data..
                 elif ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30,31] and current_hour in [9, 13, 17, 20])) and (isProcess.value == True):
                     timestamp_image = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S.%f')[:-4]
                     
-                    # Raw 사진 데이터 저장
-                    cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}",f'{timestamp_image}_{self.labelDict[labelkey.value]}_L.jpg'), frameA)
-                    cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}", f'{timestamp_image}_{self.labelDict[labelkey.value]}_R.jpg'), frameB)              
+                    # Save Raw image data
+                    cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}",f'{timestamp_image}__L.jpg'), frameA)
+                    cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}", f'{timestamp_image}__R.jpg'), frameB)              
 
-                # 데이터 수집을 중단하는 상태
+                # Stop Collecting image data
                 elif ((len(resultA.boxes) == 0 and len(resultB.boxes) == 0) or (current_minute not in [30,31] and current_hour not in [9, 13, 17, 20])) and (isProcess.value == True):
-                    isStarted.value = False # CSI 데이터 수집 OFF
+                    isStarted.value = False # Stop Collecting CSI data
+
+                # if Activate 'ESC' Key, 
+                if cv2.waitKey(1) & 0xFF == 27:
+                    break
+
 
         except KeyboardInterrupt:
+            pass
+
+        finally:
             self.camA.release()
             self.camB.release()
-            cv2.destroyAllWindows()              
+            cv2.destroyAllWindows()        
 
 if __name__ == '__main__':
 
@@ -505,12 +507,9 @@ if __name__ == '__main__':
         description="Read CSI data from serial port and display it graphically")
     parser.add_argument('-p', '--port', dest='port', action='store', required=True,
                         help="Serial port number of csv_recv device") # ESP32s3 Module Port  for connecting 
-    parser.add_argument('-s', '--store', dest='store_file', action='store', default='./csi_data.csv',
-                        help="Save the data printed by the serial port to a file")
     
     args = parser.parse_args()
     serial_port = args.port # /dev/ttyACM0
-    file_name = args.store_file # ./csi_data.csv
 
     app = QApplication(sys.argv) # 명령어를 인수로 앱 객체 생성
 
@@ -537,15 +536,3 @@ if __name__ == '__main__':
 
     sys.exit(app.exec())
 
-
-
-"""
-- csi_data_read_parse 함수에 strings 데이터 정보
-
-CSI_DATA,
-516197,
-70:5d:cc:2d:fe:bc,
--42,11,1,5,0,0,1,0,0,0,0,-93,0,1,1,-1058868037,0,83,0,256,0,
-"[0,0,0,0,0,0,0,0,0,0,0,0,-1,-10,-2,-10,-2,-11,-3,-11,-3,-11,-3,-11,-4,-11,-4,-11,-5,-11,-5,-11,-6,-11,-6,-11,-6,-10,-7,-10,-7,-10,-7,-10,-7,-10,-7,-10,-7,-9,-8,-9,-8,-9,-8,-8,-8,-9,-8,-9,-8,-9,-8,-9,0,0,-8,-10,-8,-11,-7,-11,-7,-12,-7,-12,-7,-12,-6,-13,-6,-13,-5,-14,-5,-14,-5,-14,-6,-14,-5,-14,-5,-14,-5,-15,-4,-14,-4,-14,-5,-14,-6,-13,-6,-13,-6,-13,-6,-13,-4,-14,-3,-14,-2,-14,-2,-14,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-9,-1,-10,-1,-10,-2,-10,-3,-10,-3,-11,-3,-11,-4,-11,-5,-11,-5,-11,-6,-11,-6,-11,-6,-11,-6,-11,-7,-10,-7,-10,-7,-10,-7,-10,-8,-10,-8,-9,-8,-9,-8,-9,-8,-8,-8,-8,-8,-9,-8,-9,-8,-9,-9,-8,0,0,-8,-10,-8,-10,-7,-11,-7,-12,-7,-12,-7,-12,-7,-13,-6,-13,-5,-14,-6,-14,-5,-14,-6,-14,-5,-14,-6,-14,-5,-14,-5,-14,-5,-14,-5,-14,-6,-13,-6,-13,-6,-13,-6,-13,-4,-14,-3,-14,-3,-14,-2,-14,-1,-14,-1,-14,0,0,0,0,0,0]"
-
-"""
