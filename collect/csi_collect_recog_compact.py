@@ -125,7 +125,7 @@ class csi_data_graphical_window(QMainWindow):
         self.buttonGroup.buttonClicked.connect(self.onRadioButtonClicked)
 
         # SETTING START BUTTON
-        self.pushButton = QPushButton("COLLECTING START")
+        self.pushButton = QPushButton("START")
         self.pushButton.setStyleSheet("background-color: blue; color: white;")  # 초기 색상 설정
         self.pushButton.setMaximumHeight(80)
         self.pushButton.clicked.connect(self.toggleButtonState)
@@ -181,13 +181,6 @@ class csi_data_graphical_window(QMainWindow):
         if not os.path.exists(self.datasetFolderPath):
             os.makedirs(self.datasetFolderPath)       
             
-        # CSV 파일 설정
-        self.csvFileName = "./Dataset/csi_data_with_labels_" + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".csv"
-        # self.csvFile = open(self.csvFileName, 'w', newline='', encoding='utf-8')
-        # self.csvWriter = csv.writer(self.csvFile)
-        # CSV 파일 헤더 작성
-        # self.csvWriter.writerow(["Timestamp", "Label", "Data"] )#+ [f"Data{i}" for i in range(CSI_DATA_COLUMNS)])
-        
 
 
         self.isButtonStopped = False  # 버튼 상태 추적을 위한 변수
@@ -234,10 +227,10 @@ class csi_data_graphical_window(QMainWindow):
         current_hour = datetime.datetime.now().hour
         
         if (current_minutes in [30,31] and current_hour in [9, 13, 17, 20])  and isStarted.value == False:
-            print(f'⏰ [{datetime.datetime.now()}] 데이터 기록 스위치가 활성화 되었습니다.')
+            print(f'⏰ [{datetime.datetime.now()}] Activate collecting CSI Data')
             self.pushButton.click()
         elif (current_minutes in [32] and current_hour in [9, 13, 17, 20]) and isStarted.value == True:
-            print(f'⏰ [{datetime.datetime.now()}] 데이터 기록 스위치가 비활성화 되었습니다.')
+            print(f'⏰ [{datetime.datetime.now()}] Deactivate collecting CSI Data')
             self.pushButton.click()
 
 
@@ -425,7 +418,7 @@ class Camera():
     """
     ### Img data have collect, but inferenced data haven't collect.
     - Active Acquire
-    - Passive Acqire (09:30, 12:30, 17:30, 20:30)
+    - Passive Acqire (09:30, 13:30, 17:30, 20:30)
     """
     def __init__(self):
         # Image Dirs Settings
@@ -463,8 +456,10 @@ class Camera():
                 current_minute = datetime.datetime.now().minute
                 current_hour = datetime.datetime.now().hour
 
+                condition = ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30, 31] and current_hour in [9, 13, 17, 20]))
+
                 # Start Collecting Image data
-                if ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30,31] and current_hour in [9, 13, 17, 20])) and (isProcess.value == False):
+                if condition and not isProcess.value:
                     isStarted.value = True # Start Collecting CSI data through img
                     
                     # Create Detailed Image Directory
@@ -472,22 +467,22 @@ class Camera():
                     os.makedirs(self.photosFolderPath + f"/{timestamp_dirs}", exist_ok=True)       
 
                 # Collecting data..
-                elif ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30,31] and current_hour in [9, 13, 17, 20])) and (isProcess.value == True):
+                elif condition and isProcess.value:
                     timestamp_image = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S.%f')[:-4]
-                    
+
                     # Save Raw image data
                     cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}",f'{timestamp_image}__L.jpg'), frameA)
                     cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}", f'{timestamp_image}__R.jpg'), frameB)              
 
                 # Stop Collecting image data
-                elif ((len(resultA.boxes) == 0 and len(resultB.boxes) == 0) or (current_minute not in [30,31] and current_hour not in [9, 13, 17, 20])) and (isProcess.value == True):
+                elif not condition and isProcess.value:
                     isStarted.value = False # Stop Collecting CSI data
 
                 # if Activate 'ESC' Key, 
                 if cv2.waitKey(1) & 0xFF == 27:
                     break
-
-
+ 
+ 
         except KeyboardInterrupt:
             pass
 
@@ -532,7 +527,6 @@ if __name__ == '__main__':
     camera = Camera()
     rec = multiprocessing.Process(target=camera.recording, args=(isStarted, isProcess))
     rec.start()
-
 
     sys.exit(app.exec())
 
