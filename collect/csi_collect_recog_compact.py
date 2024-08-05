@@ -6,10 +6,8 @@ CSI-Data Collecting Program
     - https://github.com/espressif/esp-csi
 """
 
-
 # Standard Library
 import sys, os
-from io import StringIO
 import csv
 import json
 import argparse
@@ -28,9 +26,6 @@ from PyQt5.Qt import *
 
 import pyqtgraph as pq
  
-# Filtering Library
-from scipy.signal import butter, filtfilt
-from scipy.ndimage import gaussian_filter
 
 # YOLOv8
 """
@@ -112,17 +107,6 @@ class csi_data_graphical_window(QMainWindow):
         self.absScaleMax = 80
         self.phaseScaleMin = -3
         self.phaseScaleMax = 3 
-
-        # SETTING RADIO BUTTONS
-        self.buttonGroup = QButtonGroup() # 버튼 그룹 설정
-        self.radioButton1 = QRadioButton("Steady State")
-        self.buttonGroup.addButton(self.radioButton1)
-        self.radioButton2 = QRadioButton("Stand")
-        self.buttonGroup.addButton(self.radioButton2)
-        self.radioButton3 = QRadioButton("Sit")
-        self.buttonGroup.addButton(self.radioButton3)
-        
-        self.buttonGroup.buttonClicked.connect(self.onRadioButtonClicked)
 
         # SETTING START BUTTON
         self.pushButton = QPushButton("START")
@@ -208,16 +192,6 @@ class csi_data_graphical_window(QMainWindow):
         self.csi_lt_abs_array = np.abs(csi_lt_data_array)
         self.csi_lt_phase_array = np.angle(csi_lt_data_array)
 
-        # 필터 적용
-        b, a = butter_lowpass(cutoff, fs, order)
-        filtered_ht_abs_array = filtfilt(b, a, self.csi_ht_abs_array)
-        filtered_lt_abs_array = filtfilt(b, a, self.csi_lt_abs_array)
-
-        # 가우시안 스무딩 적용
-        sigma = 1 # 가우시안 커널의 표준편차
-        self.smoothed_ht_abs_array = gaussian_filter(filtered_ht_abs_array, sigma)
-        self.smoothed_lt_abs_array = gaussian_filter(filtered_lt_abs_array, sigma)
-
         # 변경되는 데이터 시각화
         self.heatmap_ht.setImage(self.csi_ht_abs_array, levels=(self.absScaleMin, self.absScaleMax))
         self.heatmap_lt.setImage(self.csi_lt_abs_array, levels=(self.absScaleMin, self.absScaleMax))
@@ -233,19 +207,6 @@ class csi_data_graphical_window(QMainWindow):
             print(f'⏰ [{datetime.datetime.now()}] Deactivate collecting CSI Data')
             self.pushButton.click()
 
-
-    def onRadioButtonClicked(self, button):
-        """
-        변경된 라디오 버튼에 대해 핸들링하는 메서드
-            - 텍스트 출력 레이아웃에 현재 선택된 옵션을 표시
-
-        Args:
-            `button` : 라디오버튼 객체
-        
-        """
-        self.selectedLabel = button.text()
-        self.textLabel.setText(f'Selected option: {button.text()}')
-        labelkey.value = self.labelDict[self.selectedLabel] 
 
     def toggleButtonState(self):
         """
@@ -274,27 +235,8 @@ class csi_data_graphical_window(QMainWindow):
             
         self.isButtonStopped = not self.isButtonStopped  # 상태 토글
 
-def butter_lowpass(cutoff, fs, order=5):
-    """
-    Butterworkth 필터 계수 계산
 
-    - `nyq` : 샘플링 주파수 * 0.5
-    - `normal_cutoff` : 컷오프 주파수 / nyq
-
-    Arg: 
-        -`cutoff` : 컷오프 주파수를 의미합니다. (기본값 10)
-        - `fs` : 샘플링 주파수를 의미합니다. (기본값 8)
-        - `order` : 필터의 차수를 의미합니다. (기본값 200)
-
-    Returns:
-        b, a : 필터의 분자(b)와 분모(a) 반환
-    """
-    nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return b, a
-
-def csi_data_read_parse(ser, isCollect, labelDict):
+def csi_data_read_parse(ser, isCollect):
 
     while True:
         strings = str(ser.readline())
@@ -328,21 +270,19 @@ def csi_data_read_parse(ser, isCollect, labelDict):
         if isStarted.value == True and isCollect == False:
             print(f"    📝 [{datetime.datetime.now()}] CSI 데이터 작성을 시작합니다.")
             # CSV 파일 설정
-            csvFileName = f"/data/csi-data/Dataset/{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_{labelDict[labelkey.value]}.csv" # 파일 생성
+            csvFileName = f"/data/csi-data/Dataset/{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_.csv" # 파일 생성
             csvFile = open(csvFileName, 'w', newline='', encoding='utf-8') # csv파일 설정
             csvWriter = csv.writer(csvFile) # 파일 객체를 csv.writer 객체로 변환
             csvWriter.writerow(["Timestamp", "Label"] + DATA_COLUMNS_NAMES) # 데이터셋 컬럼        
             isCollect = True
             
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
-            label = labelDict[labelkey.value]
-            csvWriter.writerow([timestamp, label] + csi_data) # 데이터 csv 파일에 작성하기
+            csvWriter.writerow([timestamp] + csi_data) # 데이터 csv 파일에 작성하기
 
         # 데이터를 수집하고 있는 경우
         elif isStarted.value == True and isCollect == True: 
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
-            label = labelDict[labelkey.value]
-            csvWriter.writerow([timestamp, label] + csi_data) # 데이터 csv 파일에 작성하기
+            csvWriter.writerow([timestamp] + csi_data) # 데이터 csv 파일에 작성하기
         
         # 데이터 수집이 끝난 경우
         elif isStarted.value == False and isCollect == True:
@@ -386,31 +326,20 @@ def csi_data_read_parse(ser, isCollect, labelDict):
 
 class SubThread(QThread):
     """
-    GUI를 실행하면서 데이터를 수집할 스레드
-
-    Args:
-        - serial_port : 연결할 포트 /dev/ttyACM0
-
-    run() :
-        - csi 데이터 작성하기
+    ### Thread for Collecting Data with GUI
     """
     def __init__(self, serial_port):
         super().__init__()
         self.serial_port = serial_port
         self.ser = serial.Serial(port=self.serial_port, baudrate=921600, bytesize=8, parity='N', stopbits=1)
-        self.labelDict = {0:'', 1:'Steady State', 2:'Stand', 3:'Sit'}
-
         if self.ser.isOpen():
-            print("OPEN SUCCESS")
+            print("💡 ESP Open Success!")
         else:
             return
-
         # 데이터 수집 시작 플래그
         self.collectingData = False
-        
-
     def run(self):
-        csi_data_read_parse(self.ser, self.collectingData, self.labelDict)
+        csi_data_read_parse(self.ser, self.collectingData)
 
 
 
@@ -456,6 +385,7 @@ class Camera():
                 current_minute = datetime.datetime.now().minute
                 current_hour = datetime.datetime.now().hour
 
+                # Condition : The number of bounding boxes is more than 1, or at the passive time
                 condition = ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30, 31] and current_hour in [9, 13, 17, 20]))
 
                 # Start Collecting Image data
@@ -512,10 +442,8 @@ if __name__ == '__main__':
     window = csi_data_graphical_window()
     window.show() 
 
-
     # SHARING VARIABLES
     isStarted = multiprocessing.Value('b', False) # 스위치가 켜졌느냐 안켜졌느냐
-    isClosed = multiprocessing.Value('b', False)
     isProcess = multiprocessing.Value('b', False) # 사람이 있는지 없는지
     labelkey = multiprocessing.Value('i', 0)
     
