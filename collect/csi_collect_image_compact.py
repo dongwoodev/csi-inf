@@ -1,13 +1,6 @@
-"""
-CSI-Data Collecting Program
-
-- author
-    - https://github.com/espressif/esp-idf
-    - https://github.com/espressif/esp-csi
-"""
-
 # Standard Library
 import sys, os
+from os import path
 from io import StringIO
 import csv
 import json
@@ -15,18 +8,26 @@ import argparse
 import serial
 import datetime
 import multiprocessing
+import glob
 
 # Third-party
+import pandas as pd
 import numpy as np
 import cv2
+import subprocess as sp
 
 # GUI library
+from PyQt5 import QtCore
 from PyQt5.QtCore import QTimer, QDateTime
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QRadioButton, QPushButton, QLabel, QButtonGroup
 from PyQt5.Qt import *
 
 import pyqtgraph as pq
+from pyqtgraph import PlotWidget
  
+# Filtering Library
+from scipy.signal import butter, filtfilt
+from scipy.ndimage import gaussian_filter
 
 # YOLOv8
 """
@@ -50,16 +51,6 @@ CSI_DATA_COLUMNS = len(csi_valid_subcarrier_index)
 csi_ht_data_array = np.zeros( [CSI_DATA_INDEX, 128], dtype=np.complex64)
 csi_lt_data_array = np.zeros( [CSI_DATA_INDEX, 64], dtype=np.complex64)
 
-# Butterworth Filter
-cutoff = 10
-order = 8
-
-# 사인 파형과 노이즈 생성
-fs = 200  # 샘플링 주파수
-t = np.arange(0, 2, 1/fs)  # 시간 벡터
-freq = 10  # 사인 파형의 주파수
-x = np.sin(2 * np.pi * freq * t)  # 사인 파형
-x_noise = x + 0.5 * np.random.normal(size=len(t))  # 노이즈 추가
 
 class csi_data_graphical_window(QMainWindow):
     def __init__(self):
@@ -74,7 +65,7 @@ class csi_data_graphical_window(QMainWindow):
         - CSV 파일 설정
         """
 
-        self.setWindowTitle("Real-time CSI-data Collecting Program")
+        self.setWindowTitle("Real-time CSI-data Heatmap")
         self.setGeometry(500, 500, 1200, 800) # location(x, y), width, height
 
         # SETTING MAIN WIDGET & LAYOUT
@@ -114,12 +105,14 @@ class csi_data_graphical_window(QMainWindow):
         self.pushButton.setStyleSheet("background-color: gray; color: black;")  # 초기 색상 설정
         self.pushButton.setMaximumHeight(80)
         self.pushButton.clicked.connect(self.toggleButtonState)
-
         self.hLayout = QHBoxLayout()
         self.hLayout.addWidget(self.pushButton)
 
+        self.hLayout2 = QHBoxLayout()
+
         self.layout.addWidget(self.graphWidget) # 그래프
-        self.layout.addLayout(self.hLayout) # 시작 버튼
+        self.layout.addLayout(self.hLayout) # 라디오버튼, 시작 버튼
+        self.layout.addLayout(self.hLayout2) # 기록 라벨
 
         # Set up CSI initial Data #
         """
@@ -148,7 +141,9 @@ class csi_data_graphical_window(QMainWindow):
         if not os.path.exists(self.datasetFolderPath):
             os.makedirs(self.datasetFolderPath)       
 
+
         self.isButtonStopped = False  # 버튼 상태 추적을 위한 변수
+
         self.startTime = None   # 타이머 변수
         self.stopTime = None
 
@@ -172,18 +167,19 @@ class csi_data_graphical_window(QMainWindow):
         # 변경되는 데이터 시각화
         self.heatmap_ht.setImage(self.csi_ht_abs_array, levels=(self.absScaleMin, self.absScaleMax))
         self.heatmap_lt.setImage(self.csi_lt_abs_array, levels=(self.absScaleMin, self.absScaleMax))
-        
+
         # 0분 3분마다 스위치 컨트롤
-        current_minutes = datetime.datetime.now().minute
-        current_hour = datetime.datetime.now().hour
+        currentTime = datetime.datetime.now().minute
         
-        if (current_minutes in [30,31] and current_hour in [9, 13, 17, 20])  and isStarted.value == False:
-            print(f'⏰ [{datetime.datetime.now()}] Activate collecting CSI Data')
-            self.pushButton.click()
-        elif (current_minutes in [32] and current_hour in [9, 13, 17, 20]) and isStarted.value == True:
-            print(f'⏰ [{datetime.datetime.now()}] Deactivate collecting CSI Data')
+        if  isStarted.value == True and isProcess.value == False:
+            print(f'⏰ [{datetime.datetime.now()}] 데이터 기록 스위치가 활성화 되었습니다.')
+            isProcess.value = True
             self.pushButton.click()
 
+        elif isStarted.value == False and isProcess.value == True:
+            print(f'⏰ [{datetime.datetime.now()}] 데이터 기록 스위치가 비활성화 되었습니다.')
+            isProcess.value = False
+            self.pushButton.click()
 
     def toggleButtonState(self):
         """
@@ -196,22 +192,19 @@ class csi_data_graphical_window(QMainWindow):
             isStarted.value = False
             self.stopTime = QDateTime.currentDateTime()
             self.pushButton.setText("No data currently being collected.")
-            self.pushButton.setStyleSheet("background-color: gray; color: black;")  # "Start" 상태의 색상
+            self.pushButton.setStyleSheet("background-color: gray; color: black;")   # "Start" 상태의 색상
             # 여기에 "Start" 상태일 때 수행할 추가 동작을 구현할 수 있습니다.
-            self.textLabel2.setText(f"Started at: {self.startTime.toString()} || Stopped at: {self.stopTime.toString()}")
             self.startTime = None  # 다음 시작을 위해 초기화
 
         else:
             # START ~ (STOP을 대기하는 상태)
             isStarted.value = True
             self.startTime = QDateTime.currentDateTime()
-            #self.textLabel2.setText(f"Started at: {self.startTime.toString()}")
             self.pushButton.setText("Currently Collecting data")
-            self.pushButton.setStyleSheet("background-color: red; color: black;")  # "Stop" 상태의 색상
+            self.pushButton.setStyleSheet("background-color: red; color: black;")   # "Stop" 상태의 색상
             # 여기에 "Stop" 상태일 때 수행할 추가 동작을 구현할 수 있습니다.
             
         self.isButtonStopped = not self.isButtonStopped  # 상태 토글
-
 
 def csi_data_read_parse(ser, isCollect):
 
@@ -250,7 +243,7 @@ def csi_data_read_parse(ser, isCollect):
             csvFileName = f"/data/csi-data/Dataset/{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_.csv" # 파일 생성
             csvFile = open(csvFileName, 'w', newline='', encoding='utf-8') # csv파일 설정
             csvWriter = csv.writer(csvFile) # 파일 객체를 csv.writer 객체로 변환
-            csvWriter.writerow(["Timestamp", "Label"] + DATA_COLUMNS_NAMES) # 데이터셋 컬럼        
+            csvWriter.writerow(["Timestamp"] + DATA_COLUMNS_NAMES) # 데이터셋 컬럼        
             isCollect = True
             
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
@@ -303,49 +296,52 @@ def csi_data_read_parse(ser, isCollect):
 
 class SubThread(QThread):
     """
-    ### Thread for Collecting Data with GUI
+    GUI를 실행하면서 데이터를 수집할 스레드
+
+    Args:
+        - serial_port : 연결할 포트 /dev/ttyACM0
+        - save_file_name : 저장할 파일 명칭
+
+    run() :
+        - csi 데이터 작성하기
     """
     def __init__(self, serial_port):
         super().__init__()
         self.serial_port = serial_port
         self.ser = serial.Serial(port=self.serial_port, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+
         if self.ser.isOpen():
-            print("💡 ESP Open Success!")
+            print("OPEN SUCCESS")
         else:
             return
+
         # 데이터 수집 시작 플래그
         self.collectingData = False
+        
+
     def run(self):
         csi_data_read_parse(self.ser, self.collectingData)
 
-
-
 class Camera():
-    """
-    ### Img data have collect, but inferenced data haven't collect.
-    - Active Acquire
-    - Passive Acqire (09:30, 13:30, 17:30, 20:30)
-    """
     def __init__(self):
-        # Image Dirs Settings
         self.photosFolderPath = "/data/csi-data/Photos"
         os.makedirs(self.photosFolderPath, exist_ok=True)
 
         # Camera Settings
-        self.camA= cv2.VideoCapture('/dev/video0') # CamA
-        self.camB= cv2.VideoCapture('/dev/video2') # CamB
+        self.camA= cv2.VideoCapture('/dev/video4') # CamA
+        self.camB= cv2.VideoCapture('/dev/video5') # CamB
         # If the Cams doesn't open due to a error, put in VideoCapture '1' or '/dev/video1' instead of '0'.
 
-        self.set_camera_resolution(self.camA)
-        self.set_camera_resolution(self.camB)        
+        self.set_camera_resolution(camera=self.camA)      
+        self.set_camera_resolution(camera=self.camB)      
 
         self.record = False
-        self.model = YOLO("./yolov8x-pose.pt") # YOLOv8 Model
+        self.model = YOLO("./yolov8s-pose.pt") # YOLOv8 Model
 
     def set_camera_resolution(self, camera, width=1280, height=720):
         """### Camera FRAME WIDTH, HEIGHT(1280x720)"""
-        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
 
     def recording(self, isStarted, isProcess):
@@ -354,12 +350,7 @@ class Camera():
                 # Frames continued collect
                 retA, frameA = self.camA.read()
                 retB, frameB = self.camB.read()
-                
-                if retA == False or retB == False:
-                    print("⚠️ '/dev/video0' 혹은 '/dev/video2' 디렉토리를 확인해주세요. # Camera Settings")
-                    break
 
-                # Inference Human's Existion.
                 resultA = self.model.predict(frameA, iou=0.5, conf=0.5)[0]
                 resultB = self.model.predict(frameB, iou=0.5, conf=0.5)[0]
 
@@ -370,7 +361,7 @@ class Camera():
                 condition = ((len(resultA.boxes) >= 1 or len(resultB.boxes) >= 1) or (current_minute in [30, 31] and current_hour in [9, 13, 17, 20]))
 
                 # Start Collecting Image data
-                if condition and not isProcess.value:
+                if condition and (isProcess.value == False):
                     isStarted.value = True # Start Collecting CSI data through img
                     
                     # Create Detailed Image Directory
@@ -378,7 +369,7 @@ class Camera():
                     os.makedirs(self.photosFolderPath + f"/{timestamp_dirs}", exist_ok=True)       
 
                 # Collecting data..
-                elif condition and isProcess.value:
+                elif condition and (isProcess.value == True):
                     timestamp_image = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S.%f')[:-4]
 
                     # Save Raw image data
@@ -386,21 +377,13 @@ class Camera():
                     cv2.imwrite(os.path.join(self.photosFolderPath + f"/{timestamp_dirs}", f'{timestamp_image}__R.jpg'), frameB)              
 
                 # Stop Collecting image data
-                elif not condition and isProcess.value:
+                elif (len(resultA.boxes) == 0 and len(resultB.boxes) == 0) or (current_minute not in [30, 31] and current_hour not in [9, 13, 17, 20]) and (isProcess.value == True):
                     isStarted.value = False # Stop Collecting CSI data
 
-                # if Activate 'ESC' Key, 
-                if cv2.waitKey(1) & 0xFF == 27:
-                    break
- 
- 
         except KeyboardInterrupt:
-            pass
-
-        finally:
             self.camA.release()
             self.camB.release()
-            cv2.destroyAllWindows()        
+            cv2.destroyAllWindows()              
 
 if __name__ == '__main__':
 
@@ -411,9 +394,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(
         description="Read CSI data from serial port and display it graphically")
+
     parser.add_argument('-p', '--port', dest='port', action='store', required=True,
                         help="Serial port number of csv_recv device") # ESP32s3 Module Port  for connecting 
-    
+
     args = parser.parse_args()
     serial_port = args.port # /dev/ttyACM0
 
@@ -425,8 +409,8 @@ if __name__ == '__main__':
 
     # SHARING VARIABLES
     isStarted = multiprocessing.Value('b', False) # 스위치가 켜졌느냐 안켜졌느냐
+    isClosed = multiprocessing.Value('b', False)
     isProcess = multiprocessing.Value('b', False) # 사람이 있는지 없는지
-    labelkey = multiprocessing.Value('i', 0)
     
     # SUB THREAD
     subthread = SubThread(serial_port)
@@ -436,6 +420,5 @@ if __name__ == '__main__':
     camera = Camera()
     rec = multiprocessing.Process(target=camera.recording, args=(isStarted, isProcess))
     rec.start()
-
     sys.exit(app.exec())
 
