@@ -8,6 +8,7 @@ CSI-Data Collecting Program
 
 # Standard Library
 import sys, os
+from io import StringIO
 import csv
 import json
 import argparse
@@ -73,7 +74,7 @@ class csi_data_graphical_window(QMainWindow):
         - CSV 파일 설정
         """
 
-        self.setWindowTitle("Real-time CSI-data Heatmap")
+        self.setWindowTitle("Real-time CSI-data Collecting Program")
         self.setGeometry(500, 500, 1200, 800) # location(x, y), width, height
 
         # SETTING MAIN WIDGET & LAYOUT
@@ -109,34 +110,16 @@ class csi_data_graphical_window(QMainWindow):
         self.phaseScaleMax = 3 
 
         # SETTING START BUTTON
-        self.pushButton = QPushButton("START")
-        self.pushButton.setStyleSheet("background-color: blue; color: white;")  # 초기 색상 설정
+        self.pushButton = QPushButton("No data currently being collected.")
+        self.pushButton.setStyleSheet("background-color: gray; color: black;")  # 초기 색상 설정
         self.pushButton.setMaximumHeight(80)
         self.pushButton.clicked.connect(self.toggleButtonState)
 
-        # SETTING TEXT OUTPUT SPACE
-        self.textLabel = QLabel("Selected option: None")
-        self.textLabel.setWordWrap(True)  # 긴 텍스트를 위한 자동 줄바꿈 활성화
-        self.textLabel2 = QLabel("TIME INFO")  # 오른쪽에 추가할 새로운 텍스트 출력창 
-        self.textLabel3 = QLabel("STATE")
-
-        # ADD UI IN LAYOUT
-        self.wLayout = QVBoxLayout() 
-        self.wLayout.addWidget(self.radioButton1) # 라디오 버튼 추가
-        self.wLayout.addWidget(self.radioButton2)
-        self.wLayout.addWidget(self.radioButton3)
-
         self.hLayout = QHBoxLayout()
-        self.hLayout.addLayout(self.wLayout)
         self.hLayout.addWidget(self.pushButton)
 
-        self.hLayout2 = QHBoxLayout()
-        self.hLayout2.addWidget(self.textLabel) 
-        self.hLayout2.addWidget(self.textLabel2)
-
         self.layout.addWidget(self.graphWidget) # 그래프
-        self.layout.addLayout(self.hLayout) # 라디오버튼, 시작 버튼
-        self.layout.addLayout(self.hLayout2) # 기록 라벨
+        self.layout.addLayout(self.hLayout) # 시작 버튼
 
         # Set up CSI initial Data #
         """
@@ -164,16 +147,10 @@ class csi_data_graphical_window(QMainWindow):
         self.datasetFolderPath = "Dataset"
         if not os.path.exists(self.datasetFolderPath):
             os.makedirs(self.datasetFolderPath)       
-            
-
 
         self.isButtonStopped = False  # 버튼 상태 추적을 위한 변수
-
         self.startTime = None   # 타이머 변수
         self.stopTime = None
-
-        # label -> key(For Record)
-        self.labelDict = {'':0, 'Steady State':1, 'Stand':2, 'Sit':3}
 
 
     def update_data(self):
@@ -218,8 +195,8 @@ class csi_data_graphical_window(QMainWindow):
             # STOP ~ (START를 대기하는 상태)
             isStarted.value = False
             self.stopTime = QDateTime.currentDateTime()
-            self.pushButton.setText("Start")
-            self.pushButton.setStyleSheet("background-color: blue; color: white;")  # "Start" 상태의 색상
+            self.pushButton.setText("No data currently being collected.")
+            self.pushButton.setStyleSheet("background-color: gray; color: black;")  # "Start" 상태의 색상
             # 여기에 "Start" 상태일 때 수행할 추가 동작을 구현할 수 있습니다.
             self.textLabel2.setText(f"Started at: {self.startTime.toString()} || Stopped at: {self.stopTime.toString()}")
             self.startTime = None  # 다음 시작을 위해 초기화
@@ -229,7 +206,7 @@ class csi_data_graphical_window(QMainWindow):
             isStarted.value = True
             self.startTime = QDateTime.currentDateTime()
             #self.textLabel2.setText(f"Started at: {self.startTime.toString()}")
-            self.pushButton.setText("Stop")
+            self.pushButton.setText("Currently Collecting data")
             self.pushButton.setStyleSheet("background-color: red; color: black;")  # "Stop" 상태의 색상
             # 여기에 "Stop" 상태일 때 수행할 추가 동작을 구현할 수 있습니다.
             
@@ -253,22 +230,22 @@ def csi_data_read_parse(ser, isCollect):
 
         # exception #
         if len(csi_data) != len(DATA_COLUMNS_NAMES):
-            print(f"해당 데이터의 컬럼의 수가 상이합니다. {len(DATA_COLUMNS_NAMES)} != {len(csi_data)}")
+            print(f"⚠️ 데이터의 컬럼 수가 일치하지 않습니다. 기대한 컬럼 수: {len(DATA_COLUMNS_NAMES)}, 실제 컬럼 수: {len(csi_data)}")
 
         try:
             csi_raw_data = json.loads(csi_data[-1]) # JSON 객체를 파이썬 객체로 읽어옵니다.
         except json.JSONDecodeError:
-            print(f"JSON 객체를 파이썬 객체로 읽어오기에 데이터가 불완전(incomplete)합니다.")
+            print(f"⚠️ JSON 데이터를 파이썬 객체로 변환할 수 없습니다. 데이터가 불완전합니다.")
             continue
 
-        if len(csi_raw_data) != 128 and len(csi_raw_data) != 256 and len(csi_raw_data) != 384:
-            print(f"파이썬 객체로 변환 후 데이터의 컬럼 수가 상이합니다.: {len(csi_raw_data)}")
+        if len(csi_raw_data) not in [128, 256, 384]:
+            print(f"⚠️ 변환된 데이터의 컬럼 수(128, 256, 384개)가 유효하지 않습니다. 현재 컬럼 수: {len(csi_raw_data)}")
             continue
 
 
         # 데이터를 수집하기 시작
         if isStarted.value == True and isCollect == False:
-            print(f"    📝 [{datetime.datetime.now()}] CSI 데이터 작성을 시작합니다.")
+            print(f"    ✏️ [{datetime.datetime.now()}] - Writing CSI data in CSV file")
             # CSV 파일 설정
             csvFileName = f"/data/csi-data/Dataset/{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_.csv" # 파일 생성
             csvFile = open(csvFileName, 'w', newline='', encoding='utf-8') # csv파일 설정
@@ -286,7 +263,7 @@ def csi_data_read_parse(ser, isCollect):
         
         # 데이터 수집이 끝난 경우
         elif isStarted.value == False and isCollect == True:
-            print(f"    📄 [{datetime.datetime.now()}] CSI 데이터 작성을 종료합니다.")
+            print(f"    ✏️ [{datetime.datetime.now()}] - End of Writing CSI Data")
             isCollect = False
             csvFile.close()
 
@@ -377,6 +354,10 @@ class Camera():
                 # Frames continued collect
                 retA, frameA = self.camA.read()
                 retB, frameB = self.camB.read()
+                
+                if retA == False or retB == False:
+                    print("⚠️ '/dev/video0' 혹은 '/dev/video2' 디렉토리를 확인해주세요. # Camera Settings")
+                    break
 
                 # Inference Human's Existion.
                 resultA = self.model.predict(frameA, iou=0.5, conf=0.5)[0]
