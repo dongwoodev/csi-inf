@@ -80,7 +80,7 @@ class LocationLabeling:
         x12, y12 = skel_data.get('12')
 
 
-        if side == '_L':
+        if side == 'L':
             # base line f(x), g(x)
             x1, y1, x2, y2 = 230, 300, 570, 255 # f
             x3, y3, x4, y4 = 255, 600, 885, 450 # g
