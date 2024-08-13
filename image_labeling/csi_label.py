@@ -71,7 +71,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--strid', dest='stride', action='store')
     args = parser.parse_args()
     grid = int(args.grid) # path of location csv data files
-    stride = int(float(args.stride) * 100)
+    stride = int(float(args.stride) * 1000)
 
     data = CsiLabeling()
     data.saved_csi_label(grid, stride)
