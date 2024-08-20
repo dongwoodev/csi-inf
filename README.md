@@ -8,8 +8,8 @@
 
 ## Collect Module
 <figure>
-<img src="", alt="csi_collect_image_compact.py">
-<figcaption>CSI-Collecting-image-Compact</figcaption>
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/assets/compact_acquire.png", alt="csi_collect_image_compact.py" width=600px>
+  <figcaption>CSI-Collecting-image-Compact</figcaption>
 </figure>
 
 
