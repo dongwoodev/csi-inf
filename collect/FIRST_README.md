@@ -56,7 +56,7 @@ or
 ```
 cd ../tools
 python csi_collect_recog.py -p /dev/ttyACM0
-python csi_data_read_parse_dongwoo_0605.py -p /dev/ttyACM0 | tee /data/csi-data/0614.log
+python csi_collet_image_compact.py -p /dev/ttyACM0
 ```
 
 
