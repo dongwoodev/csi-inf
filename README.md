@@ -24,7 +24,7 @@
   - A module that collects CSI data and image data with two cameras when a person is recognized or at a specific time (Not inferenced image)
 - `csi_collect_inf.py` : Infer Sit, stand without image collection (model required)
 
-||collect csi_data|collect image_data|inferenced_image_data|passive collect|human detection|
+||collect csi|collect image|human detection info.(skeleton, bbox: img, csv) |passive collect|auto collection(human detection based)|
 |---|:---:|:---:|:---:|:---:|:---:|
 |csi_collect_recog|O|O|X|O|X|
 |csi_collect_recog_auto|O|O|O|O|O|
