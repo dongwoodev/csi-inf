@@ -24,24 +24,28 @@ from PIL import Image, ImageDraw, ImageFont # pillow 10.4.0
 img_width, img_height = 1280, 720
 
 class LocationLabeling:
-    def __init__(self, file):
+    def __init__(self, file, side):
         self.csvfile = open(file, mode='r', newline='', encoding='utf-8')
+        self.side = side 
         
     def location_label(self):
         csvreader = csv.DictReader(self.csvfile)
-        savedcsvFile = open('./' + file[:-4] + '_complete.csv', 'w', newline='', encoding='utf-8') # 2024-06-21 10:23:55_label
-        csvWriter = csv.writer(savedcsvFile)
-        csvWriter.writerow(['path','location']) # set columns   
+        output_name = f'./{file[:-4]}_complete.csv'
+        with open(output_name, 'w', newline='', encoding='utf-8') as output_csv:
+            csvWriter = csv.writer(output_csv)
+            csvWriter.writerow(['path','location']) # set columns   
 
-        for row in csvreader:
-            skel_data = {'11': (float(row['11_X']), float(row['11_Y'])), '12': (float(row['12_X']), float(row['12_Y']))}
+            for row in csvreader:
+                skel_data = {'11': (float(row['11_X']), float(row['11_Y'])),
+                            '12': (float(row['12_X']), float(row['12_Y']))}
             
-            loc = self.location_ratio(skel_data, side)
-            csvWriter.writerow([row['path'], loc])
+                location = self.determine_location(skel_data, self.side)
+                csvWriter.writerow([row['path'], location])
+            
             
 
     @staticmethod
-    def location_ratio(skel_data, side):
+    def determine_location(skel_data, side):
             
         # def normalize_x(x):
         #     return (x + 1) / 2 * img_width
@@ -76,8 +80,8 @@ class LocationLabeling:
             if position['line1'] == 'Mid' and position['line2'] == 'Mid':
                 return 'Mid'    
 
-        x11, y11 = skel_data.get('11')
-        x12, y12 = skel_data.get('12')
+        x11, y11 = skel_data.get('11') # left pelvis
+        x12, y12 = skel_data.get('12') # right pelvis
 
 
         if side == 'L':
