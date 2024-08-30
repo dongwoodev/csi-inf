@@ -44,19 +44,21 @@ These codes are created **for research purposes**. If you use them as an applica
 ## Labeling
 
 ```
-├── image_labeling
-│   ├── #people
-│   │   └── labeling_people.py
-│   ├── FIRST_README.md
-│   ├── action
-│   │   ├── labeling_action.py
-│   │   ├── labeling_action_csi.py
-│   │   └── labeling_action_merge.py
-│   ├── labeling_csi.py
-│   └── location
-│       ├── labeling_loc.py
-│       ├── labeling_loc_csi.py
-│       └── labeling_loc_merge.py
+├── FIRST_README.md
+├── action
+│   ├── labeling_action.py
+│   ├── labeling_action_csi.py
+│   └── labeling_action_merge.py
+├── labeling_csi.py
+├── location
+│   ├── labeling_loc.py
+│   ├── labeling_loc_csi.py
+│   └── labeling_loc_merge.py
+└── occupancy
+    ├── labeling_occ.py
+    ├── labeling_occ_csi.py
+    ├── labeling_occ_merge.py
+    └── labeling_people_not_use.py
 ```
 
 
@@ -70,8 +72,8 @@ graph TD
 
 
 
-### # of people (Labeling based on the number of people)
-This dataset is labeled based on the number of people within a given N-second interval of CSI (Channel State Information) data. For example, at certain points in time, a specific label is assigned depending on **the number of people detected.**
+### occupancy (Labeling based on the occupancy)
+This dataset is labeled based on occupancy of person within a given N-second interval of CSI (Channel State Information) data. For example, at certain points in time, a specific label is assigned depending on **people detected.**
 
 ### action (Labeling based on the action)
 This dataset is labeled according to the behaviours of people (**sit, stand, or none**) during the N-second intervals of CSI data. In other words, the CSI data corresponding to specific actions performed by a person within N seconds is labeled accordingly.
