@@ -16,30 +16,38 @@ pip install -r requirements.txt
 ```
 
 ## MenuConfig
+
 ```
 cd ~/esp/esp-idf
 ./install.sh esp32s3
 . ./export.sh
 ```
 
-
 ```
 cd ~/esp/esp-csi/examples/get-started/csi_recv_router
 idf.py set-target esp32s3
 idf.py menuconfig
 ```
+- `set-target esp32s3` : Make sure to set the correct chip target
+- `menuconfig` : project configuration to configure Wi-Fi or Ethernet
 
-## Building 
 ```
-idf.py build
 sudo chmod 777 /dev/ttyACM0
 # ls -al /dev/ttyACM0
 ```
+- ESP32s3 File Permissions Settings✨
 
-## Flash
+
+## Building  and flash
+
+
 ```
+idf.py build
 idf.py flash -b 921600 -p /dev/ttyACM0
 ```
+- build the project and flash it to the board.
+- if it may be other computer's ESP, you should build and flash.
+
 
 ## Check!
 - please checking path in 426 lines, 183 lines `csi_collec_recog.py` 
