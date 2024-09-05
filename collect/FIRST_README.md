@@ -16,12 +16,12 @@ pip install -r requirements.txt
 ```
 
 ## Set up build
-- https://github.com/espressif/esp-idf
 ```
 cd ~/esp/esp-idf
 ./install.sh esp32s3
 . ./export.sh
 ```
+- https://github.com/espressif/esp-idf
 
 ```
 cd ~/esp/esp-csi/examples/get-started/csi_recv_router
@@ -56,6 +56,7 @@ idf.py flash -b 921600 -p /dev/ttyACM0
 # Execute Collecting Tool
 ```
 cd ../tools
+pip install -r requirements.txt
 python csi_data_read_parse.py -p /dev/ttyACM0 # example file
 ```
 
