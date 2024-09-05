@@ -15,8 +15,8 @@ conda activate csi
 pip install -r requirements.txt 
 ```
 
-## MenuConfig
-
+## Set up build
+- https://github.com/espressif/esp-idf
 ```
 cd ~/esp/esp-idf
 ./install.sh esp32s3
