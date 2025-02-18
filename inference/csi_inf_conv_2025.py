@@ -51,6 +51,7 @@ FILENAME_TIMES = 0
 CURRENT_TIME = datetime.datetime.now()
 LABELS = {"file":"", "occ": "", "act": "", "loc": ""}
 
+
 T_type = "all"
 sequence_len = 60 # sequence length of time series #MODIFY
 csi_raw_data_array = np.zeros([CSI_DATA_INDEX, 192])
@@ -60,6 +61,7 @@ csi_diff_data_array = np.zeros([CSI_DATA_INDEX, 192])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 prev_data_BT  = np.zeros([sequence_len,192])
 prev_data_INPUT  = np.zeros([sequence_len,192])
+prev_amplitude = None # PREV DIFF AMPLITUDE
 empty_process = True
 
 def parse_argument():
@@ -81,7 +83,7 @@ client = mqtt.Client() # Initialize MQTT client
 client.connect(BROKER_ADDRESS, PORT)
 
 # Load Model #
-model_name = "1111_1118_queue_60W_20S_LAG" 
+model_name = "1111_1118_queue_60W_20S_PREV" 
 def load_model(path, n_classes):
     path = path.split("/")
     if model_type == "CNN":
@@ -303,8 +305,9 @@ def remove_null_csi(csi_input):
 
 
 def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
+    global prev_amplitude
 
-    amplitude = get_amplitude(raw_data, True) 
+    amplitude = get_amplitude(raw_data, True) # 1. Amplitude
 
     if return_type == "raw":
         amplitude = amplitude /20.0
@@ -314,19 +317,34 @@ def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
         amplitude = butterworth_filter_BT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') /20.0
         return amplitude
     
-    if return_type in ["input"] :
+    if return_type == "empty" :
+        # 2. ButterWorth
         amplitude = butterworth_filter_INPUT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
-        amplitude = amplitude[5:-5,:]
+        # 3. Side Remove
+        amplitude = amplitude[5:-5,:] 
+
+        # 4. Empty Subtract
         if empty_csi is not None:
-            empty_csi = np.array(empty_csi) / 20.0
+            empty_csi = np.array(empty_csi)
             amplitude = np.subtract(amplitude, empty_csi) * 3
         return amplitude
+
     
     if return_type == "diff":
+        # 2. Butterworth
         amplitude = butterworth_filter_INPUT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') /20.0
+
+        # 3. Side Remove
         amplitude = amplitude[5:-5,:]
-        averaged_amplitude = np.mean(np.array(amplitude), axis=0)  # 평균 계산
-        diff_amplitude = np.subtract(amplitude, averaged_amplitude) * 3  # 현재 데이터와 평균 데이터의 차이 계산
+
+        # 4. Previous Subtract
+        if prev_amplitude is None:
+            prev_amplitude = amplitude  # 처음 들어오는 데이터는 prev_amplitude에 저장
+            return amplitude  # 그대로 반환
+
+        averaged_amplitude = np.mean(np.array(prev_amplitude), axis=0)  # 이전 amplitude의 평균 계산
+        diff_amplitude = np.subtract(amplitude, averaged_amplitude) * 3  # 현재 데이터와 이전 평균 데이터의 차이 계산
+        prev_amplitude = amplitude  # 현재 amplitude를 prev_amplitude에 저장
         return diff_amplitude
 
 def predict(model, X, classes:list):
@@ -396,7 +414,7 @@ def csi_data_read_parse(ser):
 
                 if GET_EMPTY_INFO_START_TIME == True:
                     print("⏰ 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
-                    time.sleep(1) # waiting time
+                    time.sleep(10) # waiting time
                     print("  지금부터 실내 공간 정보를 취득하겠습니다.")
                     empty_space = []
                     GET_EMPTY_INFO_START_TIME = False
@@ -411,15 +429,15 @@ def csi_data_read_parse(ser):
                     if (datetime.datetime.now() - start_time).total_seconds() <= 2.0:   
                         GET_START_TIME = True 
                         print(len(empty_space))         
-                        if isEmpty and len(empty_space) < 1: # num of total_data(SEC)
+                        if isEmpty and len(empty_space) < 10: # num of total_data(SEC)
                             total_data = np.array(total_data)
-                            # Amplitude
+                            # 1. Amplitude
                             emp_even_elements = total_data[:,::2]
                             emp_odd_elements = total_data[:,1::2]
                             emp_amplitude = np.sqrt(np.square(emp_even_elements) + np.square(emp_odd_elements))
-                            # Butterworth
-                            emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low')
-                            # cut down from 5 to -5 -> 50 sequence
+                            # 2. Butterworth
+                            emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
+                            # 3. cut down from 5 to -5 -> 50 sequence
                             empty_space.append(emp_amplitude[5:-5,:])
                     
                             total_data = []
@@ -454,10 +472,10 @@ def csi_data_read_parse(ser):
                     # PREPROCESSING 
                     vis_data_raw = csi_preprocessing(total_data)
                     vis_data_bt = csi_preprocessing(total_data, 'bt')
-                    vis_data_diff = csi_preprocessing(total_data, 'diff') 
-                    vis_data_emp = csi_preprocessing(total_data, 'input', empty_feature) # 50 192
+                    vis_data_diff = csi_preprocessing(total_data, 'diff')
+                    vis_data_emp = csi_preprocessing(total_data, 'empty', empty_feature) # 50 192
 
-                    vis_emp = np.zeros_like(vis_data_raw)
+                    vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
                     vis_diff = np.zeros_like(vis_data_raw)
                     vis_emp[5:-5,:]=vis_data_emp
                     vis_diff[5:-5, :] = vis_data_diff
@@ -486,7 +504,7 @@ def csi_data_read_parse(ser):
                     csi_diff_data_array[-sequence_len:] = vis_diff[:, :]
 
                     # PREV_SENSING 
-                    input_data = remove_null_csi(vis_data_diff) #or vis_data_emp
+                    input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
                     inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
                     inf_time = str(datetime.datetime.now())
                     print(inf_time)
