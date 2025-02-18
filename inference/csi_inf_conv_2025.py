@@ -385,7 +385,7 @@ def csi_data_read_parse(ser):
     while True: 
         strings = str(ser.readline())
         if not strings:
-            return None
+            continue
         strings = ser.readline() # READ CSI DATA
         result = re.findall(r"-?\d+", strings.decode("utf-8")) # Demical Number Extract(String Type) 
         csi_raw_data = list(map(int, result))[27:] # Int list type
