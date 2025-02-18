@@ -3,6 +3,7 @@ from io import StringIO
 import sys, os
 import csv
 import json
+import re
 import argparse
 import datetime
 import multiprocessing
@@ -330,7 +331,7 @@ def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
         return amplitude
 
     
-    if return_type == "diff":
+    if return_type == "diff": 
         # 2. Butterworth
         amplitude = butterworth_filter_INPUT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') /20.0
 
@@ -381,27 +382,17 @@ def csi_data_read_parse(ser):
     total_data = [] 
     total_acq_data = []
 
-    while True:
-
-        strings = str(ser.readline()) # byte → strings 
+    while True: 
+        strings = str(ser.readline())
         if not strings:
-            break
-        strings = strings.lstrip('b\'').rstrip('\\r\\n\'') # cleaning
-        index = strings.find('CSI_DATA') # 'CSI_DATA' must be exist in the string
+            return None
+        strings = ser.readline() # READ CSI DATA
+        result = re.findall(r"-?\d+", strings.decode("utf-8")) # Demical Number Extract(String Type) 
+        csi_raw_data = list(map(int, result))[27:] # Int list type
 
-        # 1. EXCEPTION PROCESS #
-        if index == -1:
-            # Not exist CSI_DATA in string
-            continue  
-        csv_reader = csv.reader(StringIO(strings)) # string to CSV file
-        csi_data = next(csv_reader)
-        
-        if len(csi_data) != len(DATA_COLUMNS_NAMES):
+        if csi_raw_data[0] != 0:
             continue
-        try:
-            csi_raw_data = json.loads(csi_data[-1])
-        except json.JSONDecodeError:
-            continue
+
         if len(csi_raw_data) not in [384]: 
             continue
         excep_amp = get_amplitude(csi_raw_data)
