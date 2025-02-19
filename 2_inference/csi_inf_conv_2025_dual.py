@@ -399,9 +399,9 @@ def csi_data_read_parse(ser0, ser1):
         
         # Check if the data is error
         def exception_process(ser):
-            if not strings:
+            if not ser:
                 return None    
-            result = re.findall(r"-?\d+", strings)
+            result = re.findall(r"-?\d+", ser)
             if len(result) != 411:  # 384 + 27 = 411
                 return None
             csi_raw_data = list(map(int, result))[27:]
