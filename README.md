@@ -21,7 +21,7 @@
 
 ### Acquisition Tool
 <figure>
-  <img src="https://github.com/dongwoodev/csi-inf/blob/main/assets/compact_acquire2.png", alt="csi_collect_image_compact.py" width=600px>
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/compact_acquire2.png", alt="csi_collect_image_compact.py" width=600px>
   <figcaption>CSI-Collecting-image-Compact</figcaption>
 </figure>
 
@@ -32,14 +32,14 @@
 
 ```mermaid
 graph TD
-    A[Amplitide 60,192] --> B[Butterworth 60,192]
-    B --> C[Side Remove 50,192]
-    C --> D[Empty 50,192]
-    C --> E[Previous 50, 192]
-    D --> F[Null Remove 50, 166]
+    A[Amplitide] --> B[Butterworth]
+    B --> C[Side Remove]
+    C --> D[Empty]
+    C --> E[Previous]
+    D --> F[Null Remove]
     E --> F
-    F --> G[CNN 1,1,50,166]
-    F --> H[Transformer 1,50,166]
+    F --> G[CNN]
+    F --> H[Transformer]
 ```
 
 ### How to use
