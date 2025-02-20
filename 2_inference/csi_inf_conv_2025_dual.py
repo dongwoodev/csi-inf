@@ -3,12 +3,12 @@ from io import StringIO
 import sys, os
 import csv
 import json
+import re
 import argparse
 import datetime
 import multiprocessing
 import time
 import warnings
-import re
 
 # Third-party
 from scipy.linalg import svd
@@ -49,7 +49,6 @@ CSI_DATA_COLUMNS = 384
 GET_START_TIME = True
 GET_EMPTY_INFO_START_TIME = True
 FILENAME_TIMES = 0 
-FILENAME_TIMES1 = 0 
 CURRENT_TIME = datetime.datetime.now()
 LABELS = {"file":"", "occ": "", "act": "", "loc": ""}
 
@@ -68,7 +67,6 @@ empty_process = True
 
 def parse_argument():
     parser = argparse.ArgumentParser(description="Read CSI data from serial port and display it graphically")
-    # parser.add_argument('-p', '--port', dest='port', action='store', required=False, default="/dev/ttyACM", help="Serial port number of csv_recv device")
     parser.add_argument('-m', '--model', dest='model', type=str, required=False, default='CNN')
     parser.add_argument('-a', '--acquire', dest='acq', action='store_true', required=False, default=False)
     parser.add_argument('-d', '--dir', dest='dir', type=str, required=False, default=datetime.datetime.now().strftime("%m%d"))
@@ -76,9 +74,6 @@ def parse_argument():
     return args.acq, args.dir, args.model
 
 acq_bool, csi_dir, model_type = parse_argument()
-
-serial_port0 = "/dev/ttyACM0"
-serial_port1 = "/dev/ttyACM1"
 
 # MQTT Configuration
 broker_address = "localhost"
@@ -119,8 +114,7 @@ model_act = load_model(f"/csi/weights/{model_name}/model/act", n_classes=3).to(d
 # CSI_SAVE_PATH #
 CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}"
 os.makedirs(CSI_SAVE_PATH, exist_ok=True)
-CSI_SAVE_PATH1 = f"/csi/datasets/{csi_dir}_1"
-os.makedirs(CSI_SAVE_PATH1, exist_ok=True)
+
 
 # GUI #
 class csi_data_graphical_window(QMainWindow):
@@ -309,7 +303,6 @@ def remove_null_csi(csi_input):
     csi_data = np.delete(csi_input, remove_indices, axis=1)
     return csi_data
 
-
 def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
     global prev_amplitude
 
@@ -336,7 +329,7 @@ def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
         return amplitude
 
     
-    if return_type == "diff":
+    if return_type == "diff": 
         # 2. Butterworth
         amplitude = butterworth_filter_INPUT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') /20.0
 
@@ -374,7 +367,6 @@ def csi_data_read_parse(ser0, ser1):
     global GET_EMPTY_INFO_START_TIME
     global CSI_SAVE_PATH
     global FILENAME_TIMES
-    global FILENAME_TIMES1
     global CURRENT_TIME
     global MAX_VALUE
     global MIN_VALUE
@@ -385,191 +377,169 @@ def csi_data_read_parse(ser0, ser1):
     global LABELS
     global empty_process
     
-    total_data0 = []
+    total_data = [] 
+    total_acq_data = []
     total_data1 = [] 
-    total_acq_data0 = []
     total_acq_data1 = []
 
-    while True:
-        # 1. EXCEPTION PROCESS #
-
-        # Read data synchronously from two serial ports
-        strings0 = ser0.readline().decode("utf-8").strip()
-        strings1 = ser1.readline().decode("utf-8").strip()
+    while True: 
+        strings0 = str(ser0.readline())
+        strings1 = str(ser1.readline())
+        if not strings0 or not strings1:
+            break
+            
         
-        # Check if the data is error
-        def exception_process(ser):
-            if not ser:
-                return None    
-            result = re.findall(r"-?\d+", ser)
-            if len(result) != 411:  # 384 + 27 = 411
-                return None
-            csi_raw_data = list(map(int, result))[27:]
+        def extract_csi_data(strings):
+            result = re.findall(r"-?\d+", strings) # Demical Number Extract(String Type) 
+            csi_raw_data = list(map(int, result))[27:] # Int list type
             if csi_raw_data[0] != 0:
+                return None
+            if len(csi_raw_data) not in [384]: 
                 return None
             excep_amp = get_amplitude(csi_raw_data)
             if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
                 return None
-            print(csi_raw_data, len(csi_raw_data))
             return csi_raw_data
 
+        csi_raw_data = extract_csi_data(strings0)
+        csi_raw_data1 = extract_csi_data(strings1)
 
-        csi_raw_data0 = exception_process(strings0)
-        csi_raw_data1 = exception_process(strings1)
-        if csi_raw_data1 is None or csi_raw_data0 is None:
+        if csi_raw_data is None or csi_raw_data1 is None:
             continue
 
-        total_data0.append(csi_raw_data0)
-        total_data1.append(csi_raw_data1)
+        # ---------------
 
-        print(len(total_data0), len(total_data0))
-        print("  ")
-        print(len(total_data1), len(total_data1))
+        if isStarted.value == True:
+            # 2. EMPTY PROCESS #
+            if isEmpty:
 
-        if len(total_data0) == sequence_len or len(total_data1) == sequence_len:
-            if isStarted.value == True:
-                # 2. EMPTY PROCESS #
-                if isEmpty:
-                    if GET_EMPTY_INFO_START_TIME == True:
-                        print("⏰ 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
-                        time.sleep(1) # waiting time
-                        print("  지금부터 실내 공간 정보를 취득하겠습니다.")
-                        empty_space = []
-                        GET_EMPTY_INFO_START_TIME = False
+                if GET_EMPTY_INFO_START_TIME == True:
+                    print("⏰ 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
+                    time.sleep(1) # waiting time
+                    print("  지금부터 실내 공간 정보를 취득하겠습니다.")
+                    empty_space = []
+                    GET_EMPTY_INFO_START_TIME = False
 
-                    if GET_START_TIME == True:
-                        start_time = datetime.datetime.now()
-                        GET_START_TIME = False
+                total_data.append(csi_raw_data)
+                print(len(total_data))
 
-                    if len(total_data0) == sequence_len:
-                        if (datetime.datetime.now() - start_time).total_seconds() <= 4.0:
-                            GET_START_TIME = True
-                            print(len(empty_space))
-                            if isEmpty and len(empty_space) < 2: # num of total_data(SEC)
-                                total_data = np.array(total_data0)
-                                # 1. Amplitude
-                                emp_even_elements = total_data[:,::2]
-                                emp_odd_elements = total_data[:,1::2]
-                                emp_amplitude = np.sqrt(np.square(emp_even_elements) + np.square(emp_odd_elements))
-                                # 2. Butterworth
-                                emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
-                                # 3. cut down from 5 to -5 -> 50 sequence
-                                empty_space.append(emp_amplitude[5:-5,:])
-
-                                total_data0 = []
-                                total_data1 = []
-                                LABELS = dict(zip(['file','occ', 'loc', 'act'], [len(empty_space), "실내","정보","취득"]))
-
-                            else:
-                                isEmpty = False
-                                total_data0 = []
-                                total_data1 = []
-                                empty_feature = np.mean(empty_space, axis=0)
-                                print(f"⏰ 실내 공간{np.shape(empty_feature)} 정보 취득이 완료되었습니다.")
+                if GET_START_TIME == True: 
+                    start_time = datetime.datetime.now() 
+                    GET_START_TIME = False 
+                
+                if len(total_data) == sequence_len:
+                    if (datetime.datetime.now() - start_time).total_seconds() <= 2.5:   
+                        GET_START_TIME = True 
+                        print(len(empty_space))         
+                        if isEmpty and len(empty_space) < 10: # num of total_data(SEC)
+                            total_data = np.array(total_data)
+                            # 1. Amplitude
+                            emp_even_elements = total_data[:,::2]
+                            emp_odd_elements = total_data[:,1::2]
+                            emp_amplitude = np.sqrt(np.square(emp_even_elements) + np.square(emp_odd_elements))
+                            # 2. Butterworth
+                            emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
+                            # 3. cut down from 5 to -5 -> 50 sequence
+                            empty_space.append(emp_amplitude[5:-5,:])
+                    
+                            total_data = []
+                            LABELS = dict(zip(['file','occ', 'loc', 'act'], [len(empty_space), "실내","정보","취득"]))
 
                         else:
-                            GET_START_TIME = True
-                            total_data0 = []
-                            total_data1 = []
-                    continue
+                            isEmpty = False
+                            total_data = [] 
+                            empty_feature = np.mean(empty_space, axis=0)
+                            print(f"⏰ 실내 공간{np.shape(empty_feature)} 정보 취득이 완료되었습니다.")
+                    
+                    else: 
+                        GET_START_TIME = True 
+                        total_data = [] 
+                continue
 
-                empty_process = False
+            empty_process = False
 
-                GET_START_TIME = True
-                if len(total_data0) == sequence_len:
-                    total_data = total_data0
+            GET_START_TIME = True 
+            total_data.append(csi_raw_data) # FOR PREDICT & VISUALIZE
+            total_acq_data.append(csi_raw_data) # FOR ACQUISTION
+
+            if GET_START_TIME == True:
+                start_time = datetime.datetime.now()
+                GET_START_TIME = False
+                
+            # 3. PREPROCESSING #
+            if len(total_data) == sequence_len:
+                if (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
+                    GET_START_TIME = True
+
+                    # PREPROCESSING 
+                    vis_data_raw = csi_preprocessing(total_data)
+                    vis_data_bt = csi_preprocessing(total_data, 'bt')
+                    vis_data_diff = csi_preprocessing(total_data, 'diff')
+                    vis_data_emp = csi_preprocessing(total_data, 'empty', empty_feature) # 50 192
+
+                    vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
+                    vis_diff = np.zeros_like(vis_data_raw)
+                    vis_emp[5:-5,:]=vis_data_emp
+                    vis_diff[5:-5, :] = vis_data_diff
+
+                    total_data = []
+                    print("\n")
+
+                    # RAW DATA ACQUISITION
+                    if acq_bool: 
+                        csvFileName = f"{CSI_SAVE_PATH}/{FILENAME_TIMES}.csv"
+                        csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                        csvWriter = csv.writer(csvFile) 
+                        csvWriter.writerows(total_acq_data)
+                        print(FILENAME_TIMES)
+                        FILENAME_TIMES +=1 
+                        csvFile.close()
+                    
+                    # VISUALIZATION
+                    csi_raw_data_array[:-sequence_len] = csi_raw_data_array[sequence_len:]
+                    csi_raw_data_array[-sequence_len:] = vis_data_raw[:, :]
+                    csi_bt_data_array[:-sequence_len] = csi_bt_data_array[sequence_len:]
+                    csi_bt_data_array[-sequence_len:] = vis_data_bt[:, :]
+                    csi_emp_data_array[:-sequence_len] = csi_emp_data_array[sequence_len:]
+                    csi_emp_data_array[-sequence_len:] = vis_emp[:, :]
+                    csi_diff_data_array[:-sequence_len] = csi_diff_data_array[sequence_len:] # WE NEED MODIFIED
+                    csi_diff_data_array[-sequence_len:] = vis_diff[:, :]
+
+                    # PREV_SENSING 
+                    input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
+                    inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
+                    inf_time = str(datetime.datetime.now())
+                    print(inf_time)
+                    occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
+                    loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
+                    print(f"{occ} ({round(occ_score,2)})")
+                    print(f"LOC: {loc} ({round(loc_score,2)})")
+                    act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
+                    print(f"ACT: {act} ({round(act_score,2)})") 
+                    LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
+                    
+                    # MQTT
+                    message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    client.publish(TOPIC, message)
+
+                    total_data = [] 
+                    total_acq_data = []
                 else:
-                    total_data = total_data1
+                    total_data = [] 
+                    total_acq_data = []
+                    GET_START_TIME = True    
+    
 
-                if GET_START_TIME == True:
-                    start_time = datetime.datetime.now()
-                    GET_START_TIME = False
-
-                # 3. PREPROCESSING #
-                if len(total_data) == sequence_len:
-                    if (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
-                        GET_START_TIME = True
-
-                        # PREPROCESSING
-                        vis_data_raw = csi_preprocessing(total_data)
-                        vis_data_bt = csi_preprocessing(total_data, 'bt')
-                        vis_data_diff = csi_preprocessing(total_data, 'diff')
-                        vis_data_emp = csi_preprocessing(total_data, 'empty', empty_feature) # 50 192
-
-                        vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
-                        vis_diff = np.zeros_like(vis_data_raw)
-                        vis_emp[5:-5,:]=vis_data_emp
-                        vis_diff[5:-5, :] = vis_data_diff
-
-                        total_data0 = []
-                        total_data1 = []
-                        print("\n")
-
-                        # RAW DATA ACQUISITION
-                        if acq_bool:
-                            csvFileName = f"{CSI_SAVE_PATH}/{FILENAME_TIMES}.csv"
-                            csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
-                            csvWriter = csv.writer(csvFile)
-                            csvWriter.writerows(total_acq_data)
-                            print(FILENAME_TIMES)
-                            FILENAME_TIMES +=1
-
-                            csvFileName1 = f"{CSI_SAVE_PATH1}/{FILENAME_TIMES1}_1.csv"
-                            csvFile1 = open(csvFileName1, 'w', newline='', encoding='utf-8')
-                            csvWriter1 = csv.writer(csvFile1)
-                            csvWriter1.writerows(total_acq_data1)
-                            FILENAME_TIMES1 +=1
-
-                            csvFile1.close()
-                            csvFile.close()
-
-                        # VISUALIZATION
-                        csi_raw_data_array[:-sequence_len] = csi_raw_data_array[sequence_len:]
-                        csi_raw_data_array[-sequence_len:] = vis_data_raw[:, :]
-                        csi_bt_data_array[:-sequence_len] = csi_bt_data_array[sequence_len:]
-                        csi_bt_data_array[-sequence_len:] = vis_data_bt[:, :]
-                        csi_emp_data_array[:-sequence_len] = csi_emp_data_array[sequence_len:]
-                        csi_emp_data_array[-sequence_len:] = vis_emp[:, :]
-                        csi_diff_data_array[:-sequence_len] = csi_diff_data_array[sequence_len:] # WE NEED MODIFIED
-                        csi_diff_data_array[-sequence_len:] = vis_diff[:, :]
-
-                        # PREV_SENSING
-                        input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
-                        inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
-                        inf_time = str(datetime.datetime.now())
-                        print(inf_time)
-                        occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
-                        loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
-                        print(f"{occ} ({round(occ_score,2)})")
-                        print(f"LOC: {loc} ({round(loc_score,2)})")
-                        act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
-                        print(f"ACT: {act} ({round(act_score,2)})")
-                        LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
-
-                        # MQTT
-                        message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
-                        client.publish(TOPIC, message)
-
-                        total_data0 = []
-                        total_data1 = []
-                        total_acq_data = []
-                    else:
-                        total_data0 = []
-                        total_data1 = []
-                        total_acq_data = []
-                        GET_START_TIME = True
-
-        ser0.close()
-        ser1.close()
+    ser.close()
 
 class SubThread(QThread):
-    def __init__(self, serial_port0, serial_port1):
+    
+    def __init__(self):
         super().__init__()
-        self.serial_port0 = serial_port0
-        self.serial_port1 = serial_port1
-
-        self.ser0 = serial.Serial(port=self.serial_port0, baudrate=921600, bytesize=8, parity='N', stopbits=1, timeout=1)
-        self.ser1 = serial.Serial(port=self.serial_port1, baudrate=921600, bytesize=8, parity='N', stopbits=1, timeout=1)        
+        self.serial_port0, self.serial_port1 = '/dev/ttyACM0', '/dev/ttyACM1'
+        self.ser0 = serial.Serial(port=self.serial_port0, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+        self.ser1 = serial.Serial(port=self.serial_port1, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+        
         if self.ser0.isOpen() and self.ser1.isOpen():
             print("OPEN SUCCESS")
         else:
@@ -597,6 +567,6 @@ if __name__ == '__main__':
     window.show()
     
     # SUB THREAD
-    subthread = SubThread(serial_port0, serial_port1)
+    subthread = SubThread()
     subthread.start()
     sys.exit(app.exec())
