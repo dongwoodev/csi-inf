@@ -468,14 +468,15 @@ def csi_data_read_parse(ser0, ser1):
             GET_START_TIME1 = True 
 
             total_data.append(csi_raw_data) # FOR PREDICT & VISUALIZE
+            total_data1.append(csi_raw_data1)# FOR PREDICT & VISUALIZE PORT1
             total_acq_data.append(csi_raw_data) # FOR ACQUISTION
-            total_acq_data1.append(csi_raw_data1) # FOR ACQUISTION#1
+            total_acq_data1.append(csi_raw_data1) # FOR ACQUISTION PORT1
 
             if GET_START_TIME == True:
                 start_time = datetime.datetime.now()
                 GET_START_TIME = False
 
-            # 3. PREPROCESSING - PORT1#
+            # 3. PREPROCESSING - PORT0#
             if len(total_data) == sequence_len:
                 if (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
                     GET_START_TIME = True
@@ -518,13 +519,13 @@ def csi_data_read_parse(ser0, ser1):
                     input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
                     inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
                     inf_time = str(datetime.datetime.now())
-                    print(inf_time)
+                    print("PORT0 - ",inf_time)
                     occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
                     loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
-                    print(f"{occ} ({round(occ_score,2)})")
-                    print(f"LOC: {loc} ({round(loc_score,2)})")
+                    print(f"PORT0 - {occ} ({round(occ_score,2)})")
+                    print(f"PORT0 - LOC: {loc} ({round(loc_score,2)})")
                     act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
-                    print(f"ACT: {act} ({round(act_score,2)})") 
+                    print(f"PORT0 - ACT: {act} ({round(act_score,2)})") 
                     LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
                     
                     # MQTT
@@ -542,8 +543,8 @@ def csi_data_read_parse(ser0, ser1):
                 start_time1 = datetime.datetime.now()
                 GET_START_TIME1 = False
 
-            # 3. PREPROCESSING - PORT2 #
-            if len(total_acq_data1) == sequence_len:
+            # 3. PREPROCESSING - PORT1 #
+            if len(total_data1) == sequence_len:
                 if (datetime.datetime.now() - start_time1).total_seconds() <= 0.5:
                     GET_START_TIME1 = True
 
@@ -553,14 +554,48 @@ def csi_data_read_parse(ser0, ser1):
                         csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
                         csvWriter = csv.writer(csvFile) 
                         csvWriter.writerows(total_acq_data1)
+                        
                         print(FILENAME_TIMES1)
                         FILENAME_TIMES1 +=1 
                         csvFile.close()
                         total_acq_data1 = []
+                        
+
+                    # PREPROCESSING
+                    vis_data_diff = csi_preprocessing(total_data1, 'diff')
+                    vis_data_emp = csi_preprocessing(total_data1, 'empty', empty_feature) # 50 192
+                    
+                    vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
+                    vis_diff = np.zeros_like(vis_data_raw)
+                    vis_emp[5:-5,:]=vis_data_emp
+                    vis_diff[5:-5, :] = vis_data_diff
+
+                    total_data1 = []
+
+
+                    # PREV_SENSING 
+                    input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
+                    inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
+                    inf_time = str(datetime.datetime.now())
+                    print("PORT1 - ",inf_time)
+                    occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
+                    loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
+                    print(f"PROT1 - {occ} ({round(occ_score,2)})")
+                    print(f"PORT1 - LOC: {loc} ({round(loc_score,2)})")
+                    act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
+                    print(f"PORT1 - ACT: {act} ({round(act_score,2)})") 
+
+                    
+                    # # MQTT
+                    # message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    # client.publish(TOPIC, message)
+
+                    total_data = [] 
+                    total_acq_data = []
+
                 else: 
                     total_acq_data1 = []
                     GET_START_TIME1 = True
-    
 
     ser.close()
 
