@@ -47,6 +47,7 @@ CSI_DATA_LLFT_COLUMNS = 64
 DATA_COLUMNS_NAMES = ["type", "id", "mac", "rssi", "rate", "sig_mode", "mcs", "bandwidth", "smoothing", "not_sounding", "aggregation", "stbc", "fec_coding", "sgi", "noise_floor", "ampdu_cnt", "channel", "secondary_channel", "local_timestamp", "ant", "sig_len", "rx_state", "len", "first_word", "data"]
 CSI_DATA_COLUMNS = 384
 GET_START_TIME = True
+GET_START_TIME1 = True
 GET_EMPTY_INFO_START_TIME = True
 FILENAME_TIMES = 0 
 FILENAME_TIMES1 = 0 
@@ -367,6 +368,7 @@ def predict(model, X, classes:list):
 def csi_data_read_parse(ser0, ser1):
 
     global GET_START_TIME
+    global GET_START_TIME1
     global GET_EMPTY_INFO_START_TIME
     global CSI_SAVE_PATH
     global FILENAME_TIMES
@@ -424,16 +426,23 @@ def csi_data_read_parse(ser0, ser1):
                     time.sleep(1) # waiting time
                     print("  지금부터 실내 공간 정보를 취득하겠습니다.")
                     empty_space = []
+                    empty_space1 = []
                     GET_EMPTY_INFO_START_TIME = False
 
                 total_data.append(csi_raw_data)
-                print(len(total_data))
+                total_data1.append(csi_raw_data1)
+                print(len(total_data), len(total_data1))
 
                 if GET_START_TIME == True: 
                     start_time = datetime.datetime.now() 
                     GET_START_TIME = False 
                 
-                if len(total_data) == sequence_len:
+                if GET_START_TIME1 == True: 
+                    start_time1 = datetime.datetime.now() 
+                    GET_START_TIME1 = False 
+
+                # 2. EMPTY PROCESS PORT0 #
+                if len(total_data) == sequence_len and len(total_data1) == sequence_len:
                     if (datetime.datetime.now() - start_time).total_seconds() <= 2.5:   
                         GET_START_TIME = True 
                         print(len(empty_space))         
@@ -447,20 +456,62 @@ def csi_data_read_parse(ser0, ser1):
                             emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
                             # 3. cut down from 5 to -5 -> 50 sequence
                             empty_space.append(emp_amplitude[5:-5,:])
-                    
                             total_data = []
+
+                            total_data1 = np.array(total_data1)
+                            # 1. Amplitude
+                            emp_even_elements1 = total_data1[:,::2]
+                            emp_odd_elements1 = total_data1[:,1::2]
+                            emp_amplitude1 = np.sqrt(np.square(emp_even_elements1) + np.square(emp_odd_elements1))
+                            # 2. Butterworth
+                            emp_amplitude1 = butterworth_filter(emp_amplitude1, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
+                            # 3. cut down from 5 to -5 -> 50 sequence
+                            empty_space1.append(emp_amplitude1[5:-5,:])
+                            total_data1 = []
                             LABELS = dict(zip(['file','occ', 'loc', 'act'], [len(empty_space), "실내","정보","취득"]))
 
                         else:
                             isEmpty = False
                             total_data = [] 
                             empty_feature = np.mean(empty_space, axis=0)
+                            total_data1 = []
+                            empty_feature1 = np.mean(empty_space1, axis=0)
                             print(f"⏰ 실내 공간{np.shape(empty_feature)} 정보 취득이 완료되었습니다.")
                     
                     else: 
                         GET_START_TIME = True 
                         total_data = [] 
+                        total_data1 = [] 
                 continue
+    
+                # # 2. EMPTY PROCESS PORT1 #
+                # if len(total_data1) == sequence_len:
+                #     if (datetime.datetime.now() - start_time).total_seconds() <= 2.5:   
+                #         GET_START_TIME1 = True         
+                #         if isEmpty and len(empty_space1) < 10: # num of total_data(SEC)
+                #             total_data1 = np.array(total_data1)
+                #             # 1. Amplitude
+                #             emp_even_elements = total_data1[:,::2]
+                #             emp_odd_elements = total_data1[:,1::2]
+                #             emp_amplitude = np.sqrt(np.square(emp_even_elements) + np.square(emp_odd_elements))
+                #             # 2. Butterworth
+                #             emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
+                #             # 3. cut down from 5 to -5 -> 50 sequence
+                #             empty_space1.append(emp_amplitude[5:-5,:])
+                #             total_data1 = []
+
+                #             print("-------------------------------", len(empty_space1))
+
+                #         else:
+                #             isEmpty = False
+                #             total_data1 = [] 
+                #             empty_feature1 = np.mean(empty_space1, axis=0)
+                #             print(f"⏰ 실내 공간{np.shape(empty_feature1)} 정보 취득이 완료되었습니다.")
+                    
+                #     else: 
+                #         GET_START_TIME1 = True 
+                #         total_data1 = [] 
+                # continue
 
             empty_process = False
 
@@ -529,7 +580,7 @@ def csi_data_read_parse(ser0, ser1):
                     LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
                     
                     # MQTT
-                    message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    message = create_mqtt_message(port=0, occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
                     client.publish(TOPIC, message)
 
                     total_data = [] 
@@ -563,7 +614,7 @@ def csi_data_read_parse(ser0, ser1):
 
                     # PREPROCESSING
                     vis_data_diff = csi_preprocessing(total_data1, 'diff')
-                    vis_data_emp = csi_preprocessing(total_data1, 'empty', empty_feature) # 50 192
+                    vis_data_emp = csi_preprocessing(total_data1, 'empty', empty_feature1) # 50 192
                     
                     vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
                     vis_diff = np.zeros_like(vis_data_raw)
@@ -586,9 +637,9 @@ def csi_data_read_parse(ser0, ser1):
                     print(f"PORT1 - ACT: {act} ({round(act_score,2)})") 
 
                     
-                    # # MQTT
-                    # message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
-                    # client.publish(TOPIC, message)
+                    # MQTT
+                    message = create_mqtt_message(port=1, occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    client.publish(TOPIC, message)
 
                     total_data = [] 
                     total_acq_data = []
