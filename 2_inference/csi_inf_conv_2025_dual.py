@@ -49,6 +49,7 @@ CSI_DATA_COLUMNS = 384
 GET_START_TIME = True
 GET_EMPTY_INFO_START_TIME = True
 FILENAME_TIMES = 0 
+FILENAME_TIMES1 = 0 
 CURRENT_TIME = datetime.datetime.now()
 LABELS = {"file":"", "occ": "", "act": "", "loc": ""}
 
@@ -112,9 +113,11 @@ model_loc = load_model(f"/csi/weights/{model_name}/model/loc", n_classes=2).to(d
 model_act = load_model(f"/csi/weights/{model_name}/model/act", n_classes=3).to(device)
 
 # CSI_SAVE_PATH #
-CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}"
+CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}_PORT0"
 os.makedirs(CSI_SAVE_PATH, exist_ok=True)
 
+CSI_SAVE_PATH_1 = f"/csi/datasets/{csi_dir}_PORT1"
+os.makedirs(CSI_SAVE_PATH_1, exist_ok=True)
 
 # GUI #
 class csi_data_graphical_window(QMainWindow):
@@ -367,6 +370,7 @@ def csi_data_read_parse(ser0, ser1):
     global GET_EMPTY_INFO_START_TIME
     global CSI_SAVE_PATH
     global FILENAME_TIMES
+    global FILENAME_TIMES1
     global CURRENT_TIME
     global MAX_VALUE
     global MIN_VALUE
@@ -392,9 +396,10 @@ def csi_data_read_parse(ser0, ser1):
         def extract_csi_data(strings):
             result = re.findall(r"-?\d+", strings) # Demical Number Extract(String Type) 
             csi_raw_data = list(map(int, result))[27:] # Int list type
-            if csi_raw_data[0] != 0:
-                return None
+
             if len(csi_raw_data) not in [384]: 
+                return None
+            if csi_raw_data[0] != 0:
                 return None
             excep_amp = get_amplitude(csi_raw_data)
             if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
@@ -408,6 +413,7 @@ def csi_data_read_parse(ser0, ser1):
             continue
 
         # ---------------
+        # 우선, 데이터 취득을 목적으로 두기 때문에 전처리를 위한 EMPTY 취득을 아직 진행하지 않음.
 
         if isStarted.value == True:
             # 2. EMPTY PROCESS #
@@ -459,14 +465,17 @@ def csi_data_read_parse(ser0, ser1):
             empty_process = False
 
             GET_START_TIME = True 
+            GET_START_TIME1 = True 
+
             total_data.append(csi_raw_data) # FOR PREDICT & VISUALIZE
             total_acq_data.append(csi_raw_data) # FOR ACQUISTION
+            total_acq_data1.append(csi_raw_data1) # FOR ACQUISTION#1
 
             if GET_START_TIME == True:
                 start_time = datetime.datetime.now()
                 GET_START_TIME = False
-                
-            # 3. PREPROCESSING #
+
+            # 3. PREPROCESSING - PORT1#
             if len(total_data) == sequence_len:
                 if (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
                     GET_START_TIME = True
@@ -528,6 +537,29 @@ def csi_data_read_parse(ser0, ser1):
                     total_data = [] 
                     total_acq_data = []
                     GET_START_TIME = True    
+ 
+            if GET_START_TIME1 == True:
+                start_time1 = datetime.datetime.now()
+                GET_START_TIME1 = False
+
+            # 3. PREPROCESSING - PORT2 #
+            if len(total_acq_data1) == sequence_len:
+                if (datetime.datetime.now() - start_time1).total_seconds() <= 0.5:
+                    GET_START_TIME1 = True
+
+                    # RAW DATA ACQUISITION
+                    if acq_bool: 
+                        csvFileName = f"{CSI_SAVE_PATH_1}/{FILENAME_TIMES1}.csv"
+                        csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                        csvWriter = csv.writer(csvFile) 
+                        csvWriter.writerows(total_acq_data1)
+                        print(FILENAME_TIMES1)
+                        FILENAME_TIMES1 +=1 
+                        csvFile.close()
+                        total_acq_data1 = []
+                else: 
+                    total_acq_data1 = []
+                    GET_START_TIME1 = True
     
 
     ser.close()
