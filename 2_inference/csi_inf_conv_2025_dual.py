@@ -47,8 +47,10 @@ CSI_DATA_LLFT_COLUMNS = 64
 DATA_COLUMNS_NAMES = ["type", "id", "mac", "rssi", "rate", "sig_mode", "mcs", "bandwidth", "smoothing", "not_sounding", "aggregation", "stbc", "fec_coding", "sgi", "noise_floor", "ampdu_cnt", "channel", "secondary_channel", "local_timestamp", "ant", "sig_len", "rx_state", "len", "first_word", "data"]
 CSI_DATA_COLUMNS = 384
 GET_START_TIME = True
+GET_START_TIME1 = True
 GET_EMPTY_INFO_START_TIME = True
 FILENAME_TIMES = 0 
+FILENAME_TIMES1 = 0 
 CURRENT_TIME = datetime.datetime.now()
 LABELS = {"file":"", "occ": "", "act": "", "loc": ""}
 
@@ -59,6 +61,9 @@ csi_raw_data_array = np.zeros([CSI_DATA_INDEX, 192])
 csi_bt_data_array = np.zeros([CSI_DATA_INDEX, 192])
 csi_emp_data_array = np.zeros([CSI_DATA_INDEX, 192])
 csi_diff_data_array = np.zeros([CSI_DATA_INDEX, 192])
+
+csi_raw_data_array_PORT1 = np.zeros([CSI_DATA_INDEX, 192])
+csi_bt_data_array_PORT1 = np.zeros([CSI_DATA_INDEX, 192])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 prev_data_BT  = np.zeros([sequence_len,192])
 prev_data_INPUT  = np.zeros([sequence_len,192])
@@ -67,14 +72,13 @@ empty_process = True
 
 def parse_argument():
     parser = argparse.ArgumentParser(description="Read CSI data from serial port and display it graphically")
-    parser.add_argument('-p', '--port', dest='port', action='store', required=False, default="/dev/ttyACM0", help="Serial port number of csv_recv device")
     parser.add_argument('-m', '--model', dest='model', type=str, required=False, default='CNN')
     parser.add_argument('-a', '--acquire', dest='acq', action='store_true', required=False, default=False)
     parser.add_argument('-d', '--dir', dest='dir', type=str, required=False, default=datetime.datetime.now().strftime("%m%d"))
     args = parser.parse_args()
-    return args.port, args.acq, args.dir, args.model
+    return args.acq, args.dir, args.model
 
-serial_port, acq_bool, csi_dir, model_type = parse_argument()
+acq_bool, csi_dir, model_type = parse_argument()
 
 # MQTT Configuration
 broker_address = "localhost"
@@ -113,9 +117,11 @@ model_loc = load_model(f"/csi/weights/{model_name}/model/loc", n_classes=2).to(d
 model_act = load_model(f"/csi/weights/{model_name}/model/act", n_classes=3).to(device)
 
 # CSI_SAVE_PATH #
-CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}"
+CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}_PORT0"
 os.makedirs(CSI_SAVE_PATH, exist_ok=True)
 
+CSI_SAVE_PATH_1 = f"/csi/datasets/{csi_dir}_PORT1"
+os.makedirs(CSI_SAVE_PATH_1, exist_ok=True)
 
 # GUI #
 class csi_data_graphical_window(QMainWindow):
@@ -123,7 +129,7 @@ class csi_data_graphical_window(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("CSI SENSING")
-        self.setGeometry(1500, 0, 1500, 1400) # location(x, y), width, height
+        self.setGeometry(0, 0, 1700, 1400) # location(x, y), width, height
 
         # SETTING MAIN WIDGET & LAYOUT
         self.mainWidget = QWidget(self)
@@ -133,14 +139,19 @@ class csi_data_graphical_window(QMainWindow):
 
         # SETTING PYQTGRAPH
         self.graphWidget = pg.GraphicsLayoutWidget()
-        self.plotItem_raw = self.graphWidget.addPlot(row=0, col=0, title="CSI HT Data(RAW)") 
+        self.plotItem_raw = self.graphWidget.addPlot(row=0, col=0, title="CSI HT Data_PORT0(RAW)") 
         self.plotItem_raw.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_bt = self.graphWidget.addPlot(row=0, col=1, title="CSI HT Data(Butter)") 
+        self.plotItem_bt = self.graphWidget.addPlot(row=1, col=0, title="CSI HT Data_PORT0(Butter)") 
         self.plotItem_bt.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_emp = self.graphWidget.addPlot(row=1, col=0, title="CSI HT Data(Vacancy)") 
+        self.plotItem_emp = self.graphWidget.addPlot(row=0, col=2, title="CSI HT Data(Vacancy)") 
         self.plotItem_emp.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_diff = self.graphWidget.addPlot(row=1, col=1, title="CSI HT Data(Diff)") 
+        self.plotItem_diff = self.graphWidget.addPlot(row=1, col=2, title="CSI HT Data(Diff)") 
         self.plotItem_diff.setLabels(left='CSI Carrier Number', bottom='Time')
+
+        self.plotItem_raw1 = self.graphWidget.addPlot(row=0, col=1, title="CSI HT Data_PORT1(RAW)") 
+        self.plotItem_raw1.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_bt1 = self.graphWidget.addPlot(row=1, col=1, title="CSI HT Data_PORT1(Butter)") 
+        self.plotItem_bt1.setLabels(left='CSI Carrier Number', bottom='Time')
 
         # SETTING HEATMAP
         self.heatmap_raw = pg.ImageItem(border='w')
@@ -151,6 +162,11 @@ class csi_data_graphical_window(QMainWindow):
         self.plotItem_emp.addItem(self.heatmap_emp)
         self.heatmap_diff = pg.ImageItem(border='w')
         self.plotItem_diff.addItem(self.heatmap_diff)
+
+        self.heatmap_raw1 = pg.ImageItem(border='w')
+        self.plotItem_raw1.addItem(self.heatmap_raw1)
+        self.heatmap_bt1 = pg.ImageItem(border='w')
+        self.plotItem_bt1.addItem(self.heatmap_bt1)
         
         # COLOR SCALE(LUT)
         colors = np.array([[0,255,0,255],[0,0,0,255],[255,0,0,255]],dtype=np.ubyte)
@@ -158,10 +174,16 @@ class csi_data_graphical_window(QMainWindow):
         colormap_bt = pg.colormap.getFromMatplotlib('inferno')
         colormap_emp = pg.ColorMap(pos=np.array([-1.0,0.0,1.0]), color=colors)
         colormap_diff = pg.ColorMap(pos=np.array([-1.0,0.0,1.0]), color=colors)
+        colormap_raw1 = pg.colormap.getFromMatplotlib('inferno')
+        colormap_bt1 = pg.colormap.getFromMatplotlib('inferno')
         self.heatmap_raw.setLookupTable(colormap_raw.getLookupTable())
         self.heatmap_bt.setLookupTable(colormap_bt.getLookupTable())
         self.heatmap_emp.setLookupTable(colormap_emp.getLookupTable(-1.0,1.0,256))
         self.heatmap_diff.setLookupTable(colormap_diff.getLookupTable(-1.0,1.0,256))
+
+        self.heatmap_raw1.setLookupTable(colormap_raw1.getLookupTable())
+        self.heatmap_bt1.setLookupTable(colormap_bt1.getLookupTable())
+
         self.absScaleMin_RAW = 0
         self.absScaleMax_RAW = 1
         self.absScaleMin_BT = 0
@@ -200,7 +222,7 @@ class csi_data_graphical_window(QMainWindow):
         self.BottomLayout.addWidget(self.pushButton)
         self.isButtonStopped = False
 
-        # SETTING LABEL (NEW)
+        # SETTING LABEL
         self.label1 = QLabel("File")
         self.label2 = QLabel("Occ")
         self.label3 = QLabel("Loc")
@@ -220,10 +242,16 @@ class csi_data_graphical_window(QMainWindow):
         self.csi_emp_abs_array = csi_emp_data_array
         self.csi_diff_abs_array = csi_diff_data_array
 
+        self.csi_raw_abs_array_PORT1 = csi_raw_data_array_PORT1
+        self.csi_bt_abs_array_PORT1 = csi_bt_data_array_PORT1
+
         self.heatmap_raw.setImage(self.csi_raw_abs_array, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
         self.heatmap_bt.setImage(self.csi_bt_abs_array, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
         self.heatmap_emp.setImage(self.csi_emp_abs_array, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
         self.heatmap_diff.setImage(self.csi_emp_abs_array, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
+        
+        self.heatmap_raw1.setImage(self.csi_raw_abs_array_PORT1, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
+        self.heatmap_bt1.setImage(self.csi_bt_abs_array_PORT1, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
 
     def update_graph(self):
         """시각화 업데이트"""
@@ -235,6 +263,9 @@ class csi_data_graphical_window(QMainWindow):
         self.heatmap_bt.setImage(self.csi_bt_abs_array, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
         self.heatmap_emp.setImage(self.csi_emp_abs_array, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
         self.heatmap_diff.setImage(self.csi_diff_abs_array, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
+
+        self.heatmap_raw1.setImage(self.csi_raw_abs_array_PORT1, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
+        self.heatmap_bt1.setImage(self.csi_bt_abs_array_PORT1, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
         self.label1.setText(str(LABELS['file']))
         self.label2.setText(LABELS['occ'] + ", ")
         self.label3.setText(LABELS['loc'] + ", ")
@@ -304,7 +335,6 @@ def remove_null_csi(csi_input):
     csi_data = np.delete(csi_input, remove_indices, axis=1)
     return csi_data
 
-
 def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
     global prev_amplitude
 
@@ -363,12 +393,14 @@ def predict(model, X, classes:list):
     return pred_class, pred_confidence
 
 
-def csi_data_read_parse(ser):
+def csi_data_read_parse(ser0, ser1):
 
     global GET_START_TIME
+    global GET_START_TIME1
     global GET_EMPTY_INFO_START_TIME
     global CSI_SAVE_PATH
     global FILENAME_TIMES
+    global FILENAME_TIMES1
     global CURRENT_TIME
     global MAX_VALUE
     global MIN_VALUE
@@ -381,23 +413,40 @@ def csi_data_read_parse(ser):
     
     total_data = [] 
     total_acq_data = []
+    total_data1 = [] 
+    total_acq_data1 = []
 
     while True: 
-        strings = str(ser.readline())
-        if not strings:
+        strings0 = str(ser0.readline())
+        strings1 = str(ser1.readline())
+        if not strings0 or not strings1:
             break
-        strings = ser.readline() # READ CSI DATA
-        result = re.findall(r"-?\d+", strings.decode("utf-8")) # Demical Number Extract(String Type) 
-        csi_raw_data = list(map(int, result))[27:] # Int list type
 
-        if len(csi_raw_data) not in [384]: 
+        if 'x1b[0;31mE ' in strings0.strip():
+            if 'ping_sock' in strings0.strip():
+                print(strings0)
+                print("❌ 패킷을 송신하지 못하고 있습니다. AP 연결을 확인해주세요.")
+            break            
+        
+        def extract_csi_data(strings):
+            result = re.findall(r"-?\d+", strings) # Demical Number Extract(String Type) 
+            csi_raw_data = list(map(int, result))[27:] # Int list type
+
+            if len(csi_raw_data) not in [384]: 
+                return None
+            if csi_raw_data[0] != 0:
+                return None
+            excep_amp = get_amplitude(csi_raw_data)
+            if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
+                return None
+            return csi_raw_data
+
+        csi_raw_data = extract_csi_data(strings0)
+        csi_raw_data1 = extract_csi_data(strings1)
+
+        if csi_raw_data is None or csi_raw_data1 is None:
             continue
 
-        if csi_raw_data[0] != 0:
-            continue
-        excep_amp = get_amplitude(csi_raw_data)
-        if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
-            continue
 
         if isStarted.value == True:
             # 2. EMPTY PROCESS #
@@ -408,16 +457,23 @@ def csi_data_read_parse(ser):
                     time.sleep(1) # waiting time
                     print("  지금부터 실내 공간 정보를 취득하겠습니다.")
                     empty_space = []
+                    empty_space1 = []
                     GET_EMPTY_INFO_START_TIME = False
 
                 total_data.append(csi_raw_data)
-                print(len(total_data))
+                total_data1.append(csi_raw_data1)
+                print(len(total_data), len(total_data1))
 
                 if GET_START_TIME == True: 
                     start_time = datetime.datetime.now() 
                     GET_START_TIME = False 
                 
-                if len(total_data) == sequence_len:
+                if GET_START_TIME1 == True: 
+                    start_time1 = datetime.datetime.now() 
+                    GET_START_TIME1 = False 
+
+                # 2. EMPTY PROCESS PORT0 #
+                if len(total_data) == sequence_len and len(total_data1) == sequence_len:
                     if (datetime.datetime.now() - start_time).total_seconds() <= 2.5:   
                         GET_START_TIME = True 
                         print(len(empty_space))         
@@ -431,32 +487,49 @@ def csi_data_read_parse(ser):
                             emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
                             # 3. cut down from 5 to -5 -> 50 sequence
                             empty_space.append(emp_amplitude[5:-5,:])
-                    
                             total_data = []
+
+                            total_data1 = np.array(total_data1)
+                            # 1. Amplitude
+                            emp_even_elements1 = total_data1[:,::2]
+                            emp_odd_elements1 = total_data1[:,1::2]
+                            emp_amplitude1 = np.sqrt(np.square(emp_even_elements1) + np.square(emp_odd_elements1))
+                            # 2. Butterworth
+                            emp_amplitude1 = butterworth_filter(emp_amplitude1, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
+                            # 3. cut down from 5 to -5 -> 50 sequence
+                            empty_space1.append(emp_amplitude1[5:-5,:])
+                            total_data1 = []
                             LABELS = dict(zip(['file','occ', 'loc', 'act'], [len(empty_space), "실내","정보","취득"]))
 
                         else:
                             isEmpty = False
                             total_data = [] 
                             empty_feature = np.mean(empty_space, axis=0)
+                            total_data1 = []
+                            empty_feature1 = np.mean(empty_space1, axis=0)
                             print(f"⏰ 실내 공간{np.shape(empty_feature)} 정보 취득이 완료되었습니다.")
                     
                     else: 
                         GET_START_TIME = True 
                         total_data = [] 
+                        total_data1 = [] 
                 continue
 
             empty_process = False
 
             GET_START_TIME = True 
+            GET_START_TIME1 = True 
+
             total_data.append(csi_raw_data) # FOR PREDICT & VISUALIZE
+            total_data1.append(csi_raw_data1)# FOR PREDICT & VISUALIZE PORT1
             total_acq_data.append(csi_raw_data) # FOR ACQUISTION
+            total_acq_data1.append(csi_raw_data1) # FOR ACQUISTION PORT1
 
             if GET_START_TIME == True:
                 start_time = datetime.datetime.now()
                 GET_START_TIME = False
-                
-            # 3. PREPROCESSING #
+
+            # 3. PREPROCESSING - PORT0#
             if len(total_data) == sequence_len:
                 if (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
                     GET_START_TIME = True
@@ -473,7 +546,6 @@ def csi_data_read_parse(ser):
                     vis_diff[5:-5, :] = vis_data_diff
 
                     total_data = []
-                    print("\n")
 
                     # RAW DATA ACQUISITION
                     if acq_bool: 
@@ -496,20 +568,22 @@ def csi_data_read_parse(ser):
                     csi_diff_data_array[-sequence_len:] = vis_diff[:, :]
 
                     # PREV_SENSING 
+                    print("---------------------------------------------------")
                     input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
                     inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
                     inf_time = str(datetime.datetime.now())
-                    print(inf_time)
+                    print("PORT0 - ",inf_time)
                     occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
                     loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
-                    print(f"{occ} ({round(occ_score,2)})")
-                    print(f"LOC: {loc} ({round(loc_score,2)})")
+                    print(f"PORT0 - {occ} ({round(occ_score,2)})")
+                    print(f"PORT0 - LOC: {loc} ({round(loc_score,2)})")
                     act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
-                    print(f"ACT: {act} ({round(act_score,2)})") 
+                    print(f"PORT0 - ACT: {act} ({round(act_score,2)})") 
                     LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
+                    print("\n")
                     
                     # MQTT
-                    message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    message = create_mqtt_message(port=0, occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
                     client.publish(TOPIC, message)
 
                     total_data = [] 
@@ -518,23 +592,94 @@ def csi_data_read_parse(ser):
                     total_data = [] 
                     total_acq_data = []
                     GET_START_TIME = True    
-    
+ 
+            if GET_START_TIME1 == True:
+                start_time1 = datetime.datetime.now()
+                GET_START_TIME1 = False
 
-    ser.close()
+            # 3. PREPROCESSING - PORT1 #
+            if len(total_data1) == sequence_len:
+                if (datetime.datetime.now() - start_time1).total_seconds() <= 0.5:
+                    GET_START_TIME1 = True
+
+                    # RAW DATA ACQUISITION
+                    if acq_bool: 
+                        csvFileName = f"{CSI_SAVE_PATH_1}/{FILENAME_TIMES1}.csv"
+                        csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                        csvWriter = csv.writer(csvFile) 
+                        csvWriter.writerows(total_acq_data1)
+                        
+                        print(FILENAME_TIMES1)
+                        FILENAME_TIMES1 +=1 
+                        csvFile.close()
+                        total_acq_data1 = []
+                        
+
+                    # PREPROCESSING
+                    vis_data_raw = csi_preprocessing(total_data1)
+                    vis_data_bt = csi_preprocessing(total_data1, 'bt')
+                    vis_data_diff = csi_preprocessing(total_data1, 'diff')
+                    vis_data_emp = csi_preprocessing(total_data1, 'empty', empty_feature1) # 50 192
+                    
+                    vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
+                    vis_diff = np.zeros_like(vis_data_raw)
+                    vis_emp[5:-5,:]=vis_data_emp
+                    vis_diff[5:-5, :] = vis_data_diff
+
+                    # VISUALIZATION
+                    csi_raw_data_array_PORT1[:-sequence_len] = csi_raw_data_array_PORT1[sequence_len:]
+                    csi_raw_data_array_PORT1[-sequence_len:] = vis_data_raw[:, :]
+                    csi_bt_data_array_PORT1[:-sequence_len] = csi_bt_data_array_PORT1[sequence_len:]
+                    csi_bt_data_array_PORT1[-sequence_len:] = vis_data_bt[:, :]
+
+                    total_data1 = []
+
+
+                    # PREV_SENSING 
+                    input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
+                    inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
+                    inf_time = str(datetime.datetime.now())
+                    print("PORT1 - ",inf_time)
+                    occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
+                    loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
+                    print(f"PROT1 - {occ} ({round(occ_score,2)})")
+                    print(f"PORT1 - LOC: {loc} ({round(loc_score,2)})")
+                    act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
+                    print(f"PORT1 - ACT: {act} ({round(act_score,2)})") 
+                    print("---------------------------------------------------")
+
+                    
+                    # MQTT
+                    message = create_mqtt_message(port=1, occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    client.publish(TOPIC, message)
+
+                    total_data1 = [] 
+                    total_acq_data1 = []
+
+                else: 
+                    total_acq_data1 = []
+                    GET_START_TIME1 = True
+
+    ser0.close()
+    ser1.close()
 
 class SubThread(QThread):
-    def __init__(self, serial_port):
+    
+    def __init__(self):
         super().__init__()
-        self.serial_port = serial_port
-        self.ser = serial.Serial(port=self.serial_port, baudrate=921600, bytesize=8, parity='N', stopbits=1)
-        
-        if self.ser.isOpen():
+        self.serial_port0, self.serial_port1 = '/dev/ttyACM0', '/dev/ttyACM1'
+        try:
+            self.ser0 = serial.Serial(port=self.serial_port0, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+            self.ser1 = serial.Serial(port=self.serial_port1, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+        except:
+            print("❌ 시리얼 포트를 확인해주세요. sudo chmod 666 /dev/ttyACM0")      
+        if self.ser0.isOpen() and self.ser1.isOpen():
             print("OPEN SUCCESS")
         else:
             return
 
     def run(self):
-        csi_data_read_parse(self.ser)
+        csi_data_read_parse(self.ser0, self.ser1)
 
 if __name__ == '__main__':
 
@@ -555,6 +700,6 @@ if __name__ == '__main__':
     window.show()
     
     # SUB THREAD
-    subthread = SubThread(serial_port)
+    subthread = SubThread()
     subthread.start()
     sys.exit(app.exec())
