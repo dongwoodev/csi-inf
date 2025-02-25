@@ -1,9 +1,8 @@
 # 🛜 CSI DATA INFERENCE
 1. `EDA` : 3D Visualization, Data Cleansing from Collected Data for learning Data
 2. `INFERENCE` : Return Labelling results inferred by 3 Application(Action/Location/Occupancy) Model using Collected CSI data & Visualized 2D Image, Data Acuqisition
-3. `Android` : CSI Modeling in Android Environment
-4. `ASSETS` : Images for Github Readme. etc.
-5. `CSI_2024` : Files being researched in 2024
+3. `ASSETS` : Images for Github Readme. etc.
+4. `CSI_2024` : Files being researched in 2024
 
 ## EDA
 > it differs from Queue, Window conditions.
@@ -20,8 +19,14 @@
 ## Acquisition & Inference
 
 ### Acquisition Tool
+- General
 <figure>
   <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/compact_acquire2.png", alt="csi_collect_image_compact.py" width=600px>
+  <figcaption>CSI-Collecting-image-Compact</figcaption>
+</figure>
+- Dual
+<figure>
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/compact_acquire3.png", alt="csi_collect_image_compact.py" width=600px>
   <figcaption>CSI-Collecting-image-Compact</figcaption>
 </figure>
 
@@ -55,9 +60,9 @@ python csi_inf_1230.py -m CNN -a -d {dir_name}
 ```
 
 
-## Android
-
 ### Process
+
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/process.png"
 
 
 ---
