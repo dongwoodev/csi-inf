@@ -62,7 +62,7 @@ python csi_inf_1230.py -m CNN -a -d {dir_name}
 
 ### Process
 
-  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/process.png"
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/process.png">
 
 
 ---
