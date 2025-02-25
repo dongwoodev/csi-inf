@@ -393,7 +393,12 @@ def csi_data_read_parse(ser0, ser1):
         strings1 = str(ser1.readline())
         if not strings0 or not strings1:
             break
-            
+
+        if 'x1b[0;31mE ' in strings0.strip():
+            if 'ping_sock' in strings0.strip():
+                print(strings0)
+                print("❌ 패킷을 송신하지 못하고 있습니다. AP 연결을 확인해주세요.")
+            break            
         
         def extract_csi_data(strings):
             result = re.findall(r"-?\d+", strings) # Demical Number Extract(String Type) 
@@ -544,7 +549,6 @@ def csi_data_read_parse(ser0, ser1):
                     vis_diff[5:-5, :] = vis_data_diff
 
                     total_data = []
-                    print("\n")
 
                     # RAW DATA ACQUISITION
                     if acq_bool: 
@@ -567,6 +571,7 @@ def csi_data_read_parse(ser0, ser1):
                     csi_diff_data_array[-sequence_len:] = vis_diff[:, :]
 
                     # PREV_SENSING 
+                    print("---------------------------------------------------")
                     input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
                     inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
                     inf_time = str(datetime.datetime.now())
@@ -578,6 +583,7 @@ def csi_data_read_parse(ser0, ser1):
                     act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
                     print(f"PORT0 - ACT: {act} ({round(act_score,2)})") 
                     LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
+                    print("\n")
                     
                     # MQTT
                     message = create_mqtt_message(port=0, occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
@@ -635,6 +641,7 @@ def csi_data_read_parse(ser0, ser1):
                     print(f"PORT1 - LOC: {loc} ({round(loc_score,2)})")
                     act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
                     print(f"PORT1 - ACT: {act} ({round(act_score,2)})") 
+                    print("---------------------------------------------------")
 
                     
                     # MQTT
@@ -648,16 +655,19 @@ def csi_data_read_parse(ser0, ser1):
                     total_acq_data1 = []
                     GET_START_TIME1 = True
 
-    ser.close()
+    ser0.close()
+    ser1.close()
 
 class SubThread(QThread):
     
     def __init__(self):
         super().__init__()
         self.serial_port0, self.serial_port1 = '/dev/ttyACM0', '/dev/ttyACM1'
-        self.ser0 = serial.Serial(port=self.serial_port0, baudrate=921600, bytesize=8, parity='N', stopbits=1)
-        self.ser1 = serial.Serial(port=self.serial_port1, baudrate=921600, bytesize=8, parity='N', stopbits=1)
-        
+        try:
+            self.ser0 = serial.Serial(port=self.serial_port0, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+            self.ser1 = serial.Serial(port=self.serial_port1, baudrate=921600, bytesize=8, parity='N', stopbits=1)
+        except:
+            print("❌ 시리얼 포트를 확인해주세요. sudo chmod 666 /dev/ttyACM0")      
         if self.ser0.isOpen() and self.ser1.isOpen():
             print("OPEN SUCCESS")
         else:
