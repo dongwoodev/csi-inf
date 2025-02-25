@@ -385,15 +385,15 @@ def csi_data_read_parse(ser):
     while True: 
         strings = str(ser.readline())
         if not strings:
-            continue
+            break
         strings = ser.readline() # READ CSI DATA
         result = re.findall(r"-?\d+", strings.decode("utf-8")) # Demical Number Extract(String Type) 
         csi_raw_data = list(map(int, result))[27:] # Int list type
 
-        if csi_raw_data[0] != 0:
+        if len(csi_raw_data) not in [384]: 
             continue
 
-        if len(csi_raw_data) not in [384]: 
+        if csi_raw_data[0] != 0:
             continue
         excep_amp = get_amplitude(csi_raw_data)
         if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
@@ -405,19 +405,20 @@ def csi_data_read_parse(ser):
 
                 if GET_EMPTY_INFO_START_TIME == True:
                     print("⏰ 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
-                    time.sleep(10) # waiting time
+                    time.sleep(1) # waiting time
                     print("  지금부터 실내 공간 정보를 취득하겠습니다.")
                     empty_space = []
                     GET_EMPTY_INFO_START_TIME = False
 
                 total_data.append(csi_raw_data)
+                print(len(total_data))
 
                 if GET_START_TIME == True: 
                     start_time = datetime.datetime.now() 
                     GET_START_TIME = False 
                 
                 if len(total_data) == sequence_len:
-                    if (datetime.datetime.now() - start_time).total_seconds() <= 2.0:   
+                    if (datetime.datetime.now() - start_time).total_seconds() <= 2.5:   
                         GET_START_TIME = True 
                         print(len(empty_space))         
                         if isEmpty and len(empty_space) < 10: # num of total_data(SEC)
