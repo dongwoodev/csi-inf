@@ -18,8 +18,9 @@ def get_next_packet_id():
         packet_id = 0
     return packet_id
 
-def create_mqtt_message(occ=None, occ_score=None, loc=None, loc_score=None, act=None, act_score=None, timestamp=None):
+def create_mqtt_message(port=0,occ=None, occ_score=None, loc=None, loc_score=None, act=None, act_score=None, timestamp=None):
     message = {
+        "port": port,
         "packet_id": get_next_packet_id(),
         "timestamp": timestamp,
         "occupancy": occ,
