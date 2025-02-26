@@ -45,6 +45,8 @@ MIN_VALUE = 0
 CSI_DATA_INDEX = 1000
 CSI_DATA_LLFT_COLUMNS = 64
 DATA_COLUMNS_NAMES = ["type", "id", "mac", "rssi", "rate", "sig_mode", "mcs", "bandwidth", "smoothing", "not_sounding", "aggregation", "stbc", "fec_coding", "sgi", "noise_floor", "ampdu_cnt", "channel", "secondary_channel", "local_timestamp", "ant", "sig_len", "rx_state", "len", "first_word", "data"]
+# 3(rssi), 6(mcs), 14(noise_floor), 18(local_timestamp)
+
 CSI_DATA_COLUMNS = 384
 GET_START_TIME = True
 GET_EMPTY_INFO_START_TIME = True
@@ -55,10 +57,19 @@ LABELS = {"file":"", "occ": "", "act": "", "loc": ""}
 
 T_type = "all"
 sequence_len = 60 # sequence length of time series #MODIFY
-csi_raw_data_array = np.zeros([CSI_DATA_INDEX, 192])
-csi_bt_data_array = np.zeros([CSI_DATA_INDEX, 192])
-csi_emp_data_array = np.zeros([CSI_DATA_INDEX, 192])
-csi_diff_data_array = np.zeros([CSI_DATA_INDEX, 192])
+
+# PORT 0
+csi_raw_data_array0 = np.zeros([CSI_DATA_INDEX, 192])
+csi_bt_data_array0 = np.zeros([CSI_DATA_INDEX, 192])
+csi_emp_data_array0 = np.zeros([CSI_DATA_INDEX, 192])
+csi_diff_data_array0 = np.zeros([CSI_DATA_INDEX, 192])
+
+# PORT 1
+csi_raw_data_array1 = np.zeros([CSI_DATA_INDEX, 192])
+csi_bt_data_array1 = np.zeros([CSI_DATA_INDEX, 192])
+csi_emp_data_array1 = np.zeros([CSI_DATA_INDEX, 192])
+csi_diff_data_array1 = np.zeros([CSI_DATA_INDEX, 192])
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 prev_data_BT  = np.zeros([sequence_len,192])
 prev_data_INPUT  = np.zeros([sequence_len,192])
@@ -73,7 +84,7 @@ def parse_argument():
     args = parser.parse_args()
     return args.acq, args.dir, args.model
 
-serial_port, acq_bool, csi_dir, model_type = parse_argument()
+acq_bool, csi_dir, model_type = parse_argument()
 
 # MQTT Configuration
 broker_address = "localhost"
@@ -112,8 +123,10 @@ model_loc = load_model(f"/csi/weights/{model_name}/model/loc", n_classes=2).to(d
 model_act = load_model(f"/csi/weights/{model_name}/model/act", n_classes=3).to(device)
 
 # CSI_SAVE_PATH #
-CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}"
-os.makedirs(CSI_SAVE_PATH, exist_ok=True)
+CSI_SAVE_PATH_0 = f"/csi/datasets/{csi_dir}_PORT0"
+CSI_SAVE_PATH_1 = f"/csi/datasets/{csi_dir}_PORT1"
+os.makedirs(CSI_SAVE_PATH_0, exist_ok=True)
+os.makedirs(CSI_SAVE_PATH_1, exist_ok=True)
 
 
 # GUI #
@@ -121,7 +134,7 @@ class csi_data_graphical_window(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("CSI SENSING")
+        self.setWindowTitle("Multiple CSI SENSING")
         self.setGeometry(1500, 0, 1500, 1400) # location(x, y), width, height
 
         # SETTING MAIN WIDGET & LAYOUT
@@ -132,35 +145,63 @@ class csi_data_graphical_window(QMainWindow):
 
         # SETTING PYQTGRAPH
         self.graphWidget = pg.GraphicsLayoutWidget()
-        self.plotItem_raw = self.graphWidget.addPlot(row=0, col=0, title="CSI HT Data(RAW)") 
-        self.plotItem_raw.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_bt = self.graphWidget.addPlot(row=0, col=1, title="CSI HT Data(Butter)") 
-        self.plotItem_bt.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_emp = self.graphWidget.addPlot(row=1, col=0, title="CSI HT Data(Vacancy)") 
-        self.plotItem_emp.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_diff = self.graphWidget.addPlot(row=1, col=1, title="CSI HT Data(Diff)") 
-        self.plotItem_diff.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_raw0 = self.graphWidget.addPlot(row=0, col=0, title="PORT 0 (RAW)") 
+        self.plotItem_raw0.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_bt0 = self.graphWidget.addPlot(row=0, col=1, title="PORT 0 (Butter)") 
+        self.plotItem_bt0.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_emp0 = self.graphWidget.addPlot(row=0, col=2, title="PORT 0 (Vacancy)") 
+        self.plotItem_emp0.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_diff0 = self.graphWidget.addPlot(row=0, col=3, title="PORT 0 (Previous)") 
+        self.plotItem_diff0.setLabels(left='CSI Carrier Number', bottom='Time')
+
+        self.plotItem_raw1 = self.graphWidget.addPlot(row=1, col=0, title="PORT 1 (RAW)") 
+        self.plotItem_raw1.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_bt1 = self.graphWidget.addPlot(row=1, col=1, title="PORT 1 (Butter)") 
+        self.plotItem_bt1.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_emp1 = self.graphWidget.addPlot(row=1, col=2, title="PORT 1 (Vacancy)") 
+        self.plotItem_emp1.setLabels(left='CSI Carrier Number', bottom='Time')
+        self.plotItem_diff1 = self.graphWidget.addPlot(row=1, col=3, title="PORT 1 (Previous)") 
+        self.plotItem_diff1.setLabels(left='CSI Carrier Number', bottom='Time')
 
         # SETTING HEATMAP
-        self.heatmap_raw = pg.ImageItem(border='w')
-        self.plotItem_raw.addItem(self.heatmap_raw)
-        self.heatmap_bt = pg.ImageItem(border='w')
-        self.plotItem_bt.addItem(self.heatmap_bt)
-        self.heatmap_emp = pg.ImageItem(border='w')
-        self.plotItem_emp.addItem(self.heatmap_emp)
-        self.heatmap_diff = pg.ImageItem(border='w')
-        self.plotItem_diff.addItem(self.heatmap_diff)
-        
+        self.heatmap_raw0 = pg.ImageItem(border='w')
+        self.plotItem_raw0.addItem(self.heatmap_raw0)
+        self.heatmap_bt0 = pg.ImageItem(border='w')
+        self.plotItem_bt0.addItem(self.heatmap_bt0)
+        self.heatmap_emp0 = pg.ImageItem(border='w')
+        self.plotItem_emp0.addItem(self.heatmap_emp0)
+        self.heatmap_diff0 = pg.ImageItem(border='w')
+        self.plotItem_diff0.addItem(self.heatmap_diff0)
+
+        self.heatmap_raw1 = pg.ImageItem(border='w')
+        self.plotItem_raw1.addItem(self.heatmap_raw1)
+        self.heatmap_bt1 = pg.ImageItem(border='w')
+        self.plotItem_bt1.addItem(self.heatmap_bt1)
+        self.heatmap_emp1 = pg.ImageItem(border='w') 
+        self.plotItem_emp1.addItem(self.heatmap_emp1)
+        self.heatmap_diff1 = pg.ImageItem(border='w')
+        self.plotItem_diff1.addItem(self.heatmap_diff1)    
+
         # COLOR SCALE(LUT)
         colors = np.array([[0,255,0,255],[0,0,0,255],[255,0,0,255]],dtype=np.ubyte)
         colormap_raw = pg.colormap.getFromMatplotlib('inferno')
         colormap_bt = pg.colormap.getFromMatplotlib('inferno')
         colormap_emp = pg.ColorMap(pos=np.array([-1.0,0.0,1.0]), color=colors)
         colormap_diff = pg.ColorMap(pos=np.array([-1.0,0.0,1.0]), color=colors)
-        self.heatmap_raw.setLookupTable(colormap_raw.getLookupTable())
-        self.heatmap_bt.setLookupTable(colormap_bt.getLookupTable())
-        self.heatmap_emp.setLookupTable(colormap_emp.getLookupTable(-1.0,1.0,256))
-        self.heatmap_diff.setLookupTable(colormap_diff.getLookupTable(-1.0,1.0,256))
+
+        ## PORT 0
+        self.heatmap_raw0.setLookupTable(colormap_raw.getLookupTable())
+        self.heatmap_bt0.setLookupTable(colormap_bt.getLookupTable())
+        self.heatmap_emp0.setLookupTable(colormap_emp.getLookupTable(-1.0,1.0,256))
+        self.heatmap_diff0.setLookupTable(colormap_diff.getLookupTable(-1.0,1.0,256))
+
+        
+        ## PORT 1
+        self.heatmap_raw1.setLookupTable(colormap_raw.getLookupTable())
+        self.heatmap_bt1.setLookupTable(colormap_bt.getLookupTable())
+        self.heatmap_emp1.setLookupTable(colormap_emp.getLookupTable(-1.0,1.0,256))
+        self.heatmap_diff1.setLookupTable(colormap_diff.getLookupTable(-1.0,1.0,256))
+
         self.absScaleMin_RAW = 0
         self.absScaleMax_RAW = 1
         self.absScaleMin_BT = 0
@@ -214,26 +255,49 @@ class csi_data_graphical_window(QMainWindow):
         self.locLayout.addWidget(self.label3)
         self.actLayout.addWidget(self.label4)
 
-        self.csi_raw_abs_array = csi_raw_data_array
-        self.csi_bt_abs_array = csi_bt_data_array
-        self.csi_emp_abs_array = csi_emp_data_array
-        self.csi_diff_abs_array = csi_diff_data_array
+        self.csi_raw_abs_array0 = csi_raw_data_array0
+        self.csi_bt_abs_array0 = csi_bt_data_array0
+        self.csi_emp_abs_array0 = csi_emp_data_array0
+        self.csi_diff_abs_array0 = csi_diff_data_array0
+        self.heatmap_raw0.setImage(self.csi_raw_abs_array0, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
+        self.heatmap_bt0.setImage(self.csi_bt_abs_array0, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
+        self.heatmap_emp0.setImage(self.csi_emp_abs_array0, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
+        self.heatmap_diff0.setImage(self.csi_diff_abs_array0, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
 
-        self.heatmap_raw.setImage(self.csi_raw_abs_array, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
-        self.heatmap_bt.setImage(self.csi_bt_abs_array, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
-        self.heatmap_emp.setImage(self.csi_emp_abs_array, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
-        self.heatmap_diff.setImage(self.csi_emp_abs_array, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
+        self.csi_raw_abs_array1 = csi_raw_data_array1
+        self.csi_bt_abs_array1 = csi_bt_data_array1
+        self.csi_emp_abs_array1 = csi_emp_data_array1
+        self.csi_diff_abs_array1 = csi_diff_data_array1
+
+
+        self.heatmap_raw1.setImage(self.csi_raw_abs_array1, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
+        self.heatmap_bt1.setImage(self.csi_bt_abs_array1, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
+        self.heatmap_emp1.setImage(self.csi_emp_abs_array1, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
+        self.heatmap_diff1.setImage(self.csi_diff_abs_array1, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
 
     def update_graph(self):
         """시각화 업데이트"""
-        self.csi_raw_abs_array = csi_raw_data_array
-        self.csi_bt_abs_array = csi_bt_data_array
-        self.csi_emp_abs_array = csi_emp_data_array
-        self.csi_diff_abs_array = csi_diff_data_array
-        self.heatmap_raw.setImage(self.csi_raw_abs_array, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
-        self.heatmap_bt.setImage(self.csi_bt_abs_array, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
-        self.heatmap_emp.setImage(self.csi_emp_abs_array, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
-        self.heatmap_diff.setImage(self.csi_diff_abs_array, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
+
+        # PORT 0
+        self.csi_raw_abs_array0 = csi_raw_data_array0
+        self.csi_bt_abs_array0 = csi_bt_data_array0
+        self.csi_emp_abs_array0 = csi_emp_data_array0
+        self.csi_diff_abs_array0 = csi_diff_data_array0
+        self.heatmap_raw0.setImage(self.csi_raw_abs_array0, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
+        self.heatmap_bt0.setImage(self.csi_bt_abs_array0, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
+        self.heatmap_emp0.setImage(self.csi_emp_abs_array0, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
+        self.heatmap_diff0.setImage(self.csi_diff_abs_array0, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
+
+        # PORT 1
+        self.csi_raw_abs_array1 = csi_raw_data_array1
+        self.csi_bt_abs_array1 = csi_bt_data_array1
+        self.csi_emp_abs_array1 = csi_emp_data_array1
+        self.csi_diff_abs_array1 = csi_diff_data_array1
+        self.heatmap_raw1.setImage(self.csi_raw_abs_array1, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
+        self.heatmap_bt1.setImage(self.csi_bt_abs_array1, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
+        self.heatmap_emp1.setImage(self.csi_emp_abs_array1, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
+        self.heatmap_diff1.setImage(self.csi_diff_abs_array1, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
+
         self.label1.setText(str(LABELS['file']))
         self.label2.setText(LABELS['occ'] + ", ")
         self.label3.setText(LABELS['loc'] + ", ")
@@ -366,8 +430,8 @@ def csi_data_read_parse(ser):
 
     global GET_START_TIME
     global GET_EMPTY_INFO_START_TIME
-    global CSI_SAVE_PATH
-    global FILENAME_TIMES
+    global CSI_SAVE_PATH_0
+    global CSI_SAVE_PATH_1
     global CURRENT_TIME
     global MAX_VALUE
     global MIN_VALUE
@@ -381,6 +445,14 @@ def csi_data_read_parse(ser):
     total_data = [] 
     total_acq_data = []
 
+    ser_str = str(ser)
+    match = re.search(r"port='(/dev/tty\w+)'", ser_str)
+    port_name = match.group(1).split("/")[-1]
+    port_num = int(port_name.replace("ttyACM", ""))
+
+    FILENAME_TIMES = 0
+    start_time = None  # 초기화
+
     while True: 
         strings = str(ser.readline())
         if not strings:
@@ -388,6 +460,7 @@ def csi_data_read_parse(ser):
         strings = ser.readline() # READ CSI DATA
         result = re.findall(r"-?\d+", strings.decode("utf-8")) # Demical Number Extract(String Type) 
         csi_raw_data = list(map(int, result))[27:] # Int list type
+        acquisition_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] 
 
         if len(csi_raw_data) not in [384]: 
             continue
@@ -397,31 +470,34 @@ def csi_data_read_parse(ser):
         excep_amp = get_amplitude(csi_raw_data)
         if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
             continue
+        meta_data = [result[6], result[9], result[17], result[21]]
+        # 3(rssi), 6(mcs), 14(noise_floor), 18(local_timestamp) index +3
 
-        print()
         if isStarted.value == True:
             # 2. EMPTY PROCESS #
-            if isEmpty:
+            if isEmpty.value:
 
                 if GET_EMPTY_INFO_START_TIME == True:
-                    print("⏰ 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
+                    print(f"⏰ {port_name} 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
                     time.sleep(1) # waiting time
-                    print("  지금부터 실내 공간 정보를 취득하겠습니다.")
+                    print(f" {port_name} 지금부터 실내 공간 정보를 취득하겠습니다.")
                     empty_space = []
+                    print(datetime.datetime.now())
                     GET_EMPTY_INFO_START_TIME = False
 
                 total_data.append(csi_raw_data)
-                print(len(total_data))
+
+
 
                 if GET_START_TIME == True: 
                     start_time = datetime.datetime.now() 
                     GET_START_TIME = False 
                 
                 if len(total_data) == sequence_len:
-                    if (datetime.datetime.now() - start_time).total_seconds() <= 2.5:   
+                    if start_time is not None and (datetime.datetime.now() - start_time).total_seconds() <= 2.0:   
                         GET_START_TIME = True 
-                        print(len(empty_space))         
-                        if isEmpty and len(empty_space) < 10: # num of total_data(SEC)
+                        print(len(empty_space), port_name)         
+                        if isEmpty.value and len(empty_space) < 10: # num of total_data(SEC)
                             total_data = np.array(total_data)
                             # 1. Amplitude
                             emp_even_elements = total_data[:,::2]
@@ -436,21 +512,27 @@ def csi_data_read_parse(ser):
                             LABELS = dict(zip(['file','occ', 'loc', 'act'], [len(empty_space), "실내","정보","취득"]))
 
                         else:
-                            isEmpty = False
+                            isEmpty.value = False
                             total_data = [] 
-                            empty_feature = np.mean(empty_space, axis=0)
-                            print(f"⏰ 실내 공간{np.shape(empty_feature)} 정보 취득이 완료되었습니다.")
-                    
+                            if port_name == "ttyACM0":
+                                empty_feature0 = np.mean(empty_space, axis=0)
+                                print(f"⏰ PORT0의 실내 공간{np.shape(empty_feature0)} 정보 취득이 완료되었습니다.")
+                            elif port_name == "ttyACM1":
+                                empty_feature1 = np.mean(empty_space, axis=0)
+                                print(f"⏰ PORT1의 실내 공간{np.shape(empty_feature1)} 정보 취득이 완료되었습니다.")
+                            
                     else: 
                         GET_START_TIME = True 
                         total_data = [] 
                 continue
 
-            empty_process = False
+            if not isEmpty.value:
+                empty_process = False
 
             GET_START_TIME = True 
             total_data.append(csi_raw_data) # FOR PREDICT & VISUALIZE
-            total_acq_data.append(csi_raw_data) # FOR ACQUISTION
+            total_acq_data.append([acquisition_time] +  meta_data + csi_raw_data) # FOR ACQUISTION
+
 
             if GET_START_TIME == True:
                 start_time = datetime.datetime.now()
@@ -458,18 +540,18 @@ def csi_data_read_parse(ser):
                 
             # 3. PREPROCESSING #
             if len(total_data) == sequence_len:
-                if (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
+                if start_time is not None and (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
                     GET_START_TIME = True
 
                     # PREPROCESSING 
                     vis_data_raw = csi_preprocessing(total_data)
                     vis_data_bt = csi_preprocessing(total_data, 'bt')
                     vis_data_diff = csi_preprocessing(total_data, 'diff')
-                    vis_data_emp = csi_preprocessing(total_data, 'empty', empty_feature) # 50 192
+                    # vis_data_emp = csi_preprocessing(total_data, 'empty', empty_feature) # 50 192
 
                     vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
                     vis_diff = np.zeros_like(vis_data_raw)
-                    vis_emp[5:-5,:]=vis_data_emp
+                    # vis_emp[5:-5,:]=vis_data_emp
                     vis_diff[5:-5, :] = vis_data_diff
 
                     total_data = []
@@ -477,28 +559,49 @@ def csi_data_read_parse(ser):
 
                     # RAW DATA ACQUISITION
                     if acq_bool: 
-                        csvFileName = f"{CSI_SAVE_PATH}/{FILENAME_TIMES}.csv"
-                        csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
-                        csvWriter = csv.writer(csvFile) 
-                        csvWriter.writerows(total_acq_data)
-                        print(FILENAME_TIMES)
-                        FILENAME_TIMES +=1 
-                        csvFile.close()
+                        if port_name == "ttyACM0":
+                            csvFileName = f"{CSI_SAVE_PATH_0}/{FILENAME_TIMES}.csv"
+                            csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                            csvWriter = csv.writer(csvFile) 
+                            csvWriter.writerows(total_acq_data)
+                            FILENAME_TIMES +=1 
+                            csvFile.close()
+                        elif port_name == "ttyACM1":
+                            csvFileName = f"{CSI_SAVE_PATH_1}/{FILENAME_TIMES}.csv"
+                            csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                            csvWriter = csv.writer(csvFile) 
+                            csvWriter.writerows(total_acq_data)
+                            FILENAME_TIMES +=1 
+                            csvFile.close()
                     
                     # VISUALIZATION
-                    csi_raw_data_array[:-sequence_len] = csi_raw_data_array[sequence_len:]
-                    csi_raw_data_array[-sequence_len:] = vis_data_raw[:, :]
-                    csi_bt_data_array[:-sequence_len] = csi_bt_data_array[sequence_len:]
-                    csi_bt_data_array[-sequence_len:] = vis_data_bt[:, :]
-                    csi_emp_data_array[:-sequence_len] = csi_emp_data_array[sequence_len:]
-                    csi_emp_data_array[-sequence_len:] = vis_emp[:, :]
-                    csi_diff_data_array[:-sequence_len] = csi_diff_data_array[sequence_len:] # WE NEED MODIFIED
-                    csi_diff_data_array[-sequence_len:] = vis_diff[:, :]
+
+                    if port_name == "ttyACM0":
+                        csi_raw_data_array0[:-sequence_len] = csi_raw_data_array0[sequence_len:]
+                        csi_raw_data_array0[-sequence_len:] = vis_data_raw[:, :]
+                        csi_bt_data_array0[:-sequence_len] = csi_bt_data_array0[sequence_len:]
+                        csi_bt_data_array0[-sequence_len:] = vis_data_bt[:, :]
+                        # csi_emp_data_array0[:-sequence_len] = csi_emp_data_array0[sequence_len:]
+                        # csi_emp_data_array0[-sequence_len:] = vis_emp[:, :]
+                        csi_diff_data_array0[:-sequence_len] = csi_diff_data_array0[sequence_len:]
+                        csi_diff_data_array0[-sequence_len:] = vis_diff[:, :]
+                    elif port_name == "ttyACM1":
+                        csi_raw_data_array1[:-sequence_len] = csi_raw_data_array1[sequence_len:]
+                        csi_raw_data_array1[-sequence_len:] = vis_data_raw[:, :]
+                        csi_bt_data_array1[:-sequence_len] = csi_bt_data_array1[sequence_len:]
+                        csi_bt_data_array1[-sequence_len:] = vis_data_bt[:, :]
+                        # csi_emp_data_array1[:-sequence_len] = csi_emp_data_array1[sequence_len:]
+                        # csi_emp_data_array1[-sequence_len:] = vis_emp[:, :]
+                        csi_diff_data_array1[:-sequence_len] = csi_diff_data_array1[sequence_len:] 
+                        csi_diff_data_array1[-sequence_len:] = vis_diff[:, :]                        
+                    
 
                     # PREV_SENSING 
                     input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
                     inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
                     inf_time = str(datetime.datetime.now())
+                    print("----------------------------------")
+                    print(port_num)
                     print(inf_time)
                     occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
                     loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
@@ -506,11 +609,12 @@ def csi_data_read_parse(ser):
                     print(f"LOC: {loc} ({round(loc_score,2)})")
                     act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
                     print(f"ACT: {act} ({round(act_score,2)})") 
+                    print("----------------------------------") 
                     LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
                     
                     # MQTT
-                    message = create_mqtt_message(occ=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
-                    client.publish(TOPIC, message)
+                    # message = create_mqtt_message(port=port_num, cc=occ, occ_score=round(occ_score,2), loc=loc, loc_score=round(loc_score,2), act=act, act_score=round(act_score,2), timestamp=inf_time)
+                    # client.publish(TOPIC, message)
 
                     total_data = [] 
                     total_acq_data = []
@@ -518,7 +622,6 @@ def csi_data_read_parse(ser):
                     total_data = [] 
                     total_acq_data = []
                     GET_START_TIME = True    
-    
 
     ser.close()
 
@@ -558,6 +661,6 @@ if __name__ == '__main__':
     subthread0 = SubThread('/dev/ttyACM0')
     subthread0.start()
 
-    subthread1 = SubThread('/dev/ttyACM0')
+    subthread1 = SubThread('/dev/ttyACM1')
     subthread1.start()
     sys.exit(app.exec())
