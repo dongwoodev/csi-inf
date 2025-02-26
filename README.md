@@ -21,12 +21,14 @@
 ### Acquisition Tool
 - General
 <figure>
-  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/compact_acquire2.png", alt="csi_collect_image_compact.py" width=600px>
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/3_assets/compact_acquire2.png", alt="csi_collect_image_compact.py" width=600px>
   <figcaption>CSI-Collecting-image-Compact</figcaption>
 </figure>
+
 - Dual
+
 <figure>
-  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/compact_acquire3.png", alt="csi_collect_image_compact.py" width=600px>
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/3_assets/compact_acquire3.png", alt="csi_collect_image_compact.py" width=600px>
   <figcaption>CSI-Collecting-image-Compact</figcaption>
 </figure>
 
@@ -62,7 +64,7 @@ python csi_inf_1230.py -m CNN -a -d {dir_name}
 
 ### Process
 
-  <img src="https://github.com/dongwoodev/csi-inf/blob/main/4_assets/process.png">
+  <img src="https://github.com/dongwoodev/csi-inf/blob/main/3_assets/Process.png">
 
 
 ---
