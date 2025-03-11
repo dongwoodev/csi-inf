@@ -73,8 +73,8 @@ csi_diff_data_array1 = np.zeros([CSI_DATA_INDEX, 192])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 prev_data_BT  = np.zeros([sequence_len,192])
 prev_data_INPUT  = np.zeros([sequence_len,192])
-prev_amplitude = None # PREV DIFF AMPLITUDE
-empty_process = True
+prev_amplitude0 = None # PREV DIFF AMPLITUDE
+prev_amplitude1 = None # PREV DIFF AMPLITUDE
 
 def parse_argument():
     parser = argparse.ArgumentParser(description="Read CSI data from serial port and display it graphically")
@@ -123,10 +123,12 @@ model_loc = load_model(f"/csi/weights/{model_name}/model/loc", n_classes=2).to(d
 model_act = load_model(f"/csi/weights/{model_name}/model/act", n_classes=3).to(device)
 
 # CSI_SAVE_PATH #
-CSI_SAVE_PATH_0 = f"/csi/datasets/{csi_dir}_PORT0"
-CSI_SAVE_PATH_1 = f"/csi/datasets/{csi_dir}_PORT1"
-os.makedirs(CSI_SAVE_PATH_0, exist_ok=True)
-os.makedirs(CSI_SAVE_PATH_1, exist_ok=True)
+# CSI_SAVE_PATH_0 = f"/csi/datasets/{csi_dir}_PORT0"
+# CSI_SAVE_PATH_1 = f"/csi/datasets/{csi_dir}_PORT1"
+# os.makedirs(CSI_SAVE_PATH_0, exist_ok=True)
+# os.makedirs(CSI_SAVE_PATH_1, exist_ok=True)
+CSI_SAVE_PATH = f"/csi/datasets/{csi_dir}"
+os.makedirs(CSI_SAVE_PATH, exist_ok=True)
 
 
 # GUI #
@@ -135,7 +137,7 @@ class csi_data_graphical_window(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("Multiple CSI SENSING")
-        self.setGeometry(1500, 0, 1500, 1400) # location(x, y), width, height
+        self.setGeometry(0, 0, 1500, 1400) # location(x, y), width, height
 
         # SETTING MAIN WIDGET & LAYOUT
         self.mainWidget = QWidget(self)
@@ -149,18 +151,14 @@ class csi_data_graphical_window(QMainWindow):
         self.plotItem_raw0.setLabels(left='CSI Carrier Number', bottom='Time')
         self.plotItem_bt0 = self.graphWidget.addPlot(row=0, col=1, title="PORT 0 (Butter)") 
         self.plotItem_bt0.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_emp0 = self.graphWidget.addPlot(row=0, col=2, title="PORT 0 (Vacancy)") 
-        self.plotItem_emp0.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_diff0 = self.graphWidget.addPlot(row=0, col=3, title="PORT 0 (Previous)") 
+        self.plotItem_diff0 = self.graphWidget.addPlot(row=0, col=2, title="PORT 0 (Previous)") 
         self.plotItem_diff0.setLabels(left='CSI Carrier Number', bottom='Time')
 
         self.plotItem_raw1 = self.graphWidget.addPlot(row=1, col=0, title="PORT 1 (RAW)") 
         self.plotItem_raw1.setLabels(left='CSI Carrier Number', bottom='Time')
         self.plotItem_bt1 = self.graphWidget.addPlot(row=1, col=1, title="PORT 1 (Butter)") 
         self.plotItem_bt1.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_emp1 = self.graphWidget.addPlot(row=1, col=2, title="PORT 1 (Vacancy)") 
-        self.plotItem_emp1.setLabels(left='CSI Carrier Number', bottom='Time')
-        self.plotItem_diff1 = self.graphWidget.addPlot(row=1, col=3, title="PORT 1 (Previous)") 
+        self.plotItem_diff1 = self.graphWidget.addPlot(row=1, col=2, title="PORT 1 (Previous)") 
         self.plotItem_diff1.setLabels(left='CSI Carrier Number', bottom='Time')
 
         # SETTING HEATMAP
@@ -168,8 +166,6 @@ class csi_data_graphical_window(QMainWindow):
         self.plotItem_raw0.addItem(self.heatmap_raw0)
         self.heatmap_bt0 = pg.ImageItem(border='w')
         self.plotItem_bt0.addItem(self.heatmap_bt0)
-        self.heatmap_emp0 = pg.ImageItem(border='w')
-        self.plotItem_emp0.addItem(self.heatmap_emp0)
         self.heatmap_diff0 = pg.ImageItem(border='w')
         self.plotItem_diff0.addItem(self.heatmap_diff0)
 
@@ -177,8 +173,6 @@ class csi_data_graphical_window(QMainWindow):
         self.plotItem_raw1.addItem(self.heatmap_raw1)
         self.heatmap_bt1 = pg.ImageItem(border='w')
         self.plotItem_bt1.addItem(self.heatmap_bt1)
-        self.heatmap_emp1 = pg.ImageItem(border='w') 
-        self.plotItem_emp1.addItem(self.heatmap_emp1)
         self.heatmap_diff1 = pg.ImageItem(border='w')
         self.plotItem_diff1.addItem(self.heatmap_diff1)    
 
@@ -186,20 +180,16 @@ class csi_data_graphical_window(QMainWindow):
         colors = np.array([[0,255,0,255],[0,0,0,255],[255,0,0,255]],dtype=np.ubyte)
         colormap_raw = pg.colormap.getFromMatplotlib('inferno')
         colormap_bt = pg.colormap.getFromMatplotlib('inferno')
-        colormap_emp = pg.ColorMap(pos=np.array([-1.0,0.0,1.0]), color=colors)
         colormap_diff = pg.ColorMap(pos=np.array([-1.0,0.0,1.0]), color=colors)
 
         ## PORT 0
         self.heatmap_raw0.setLookupTable(colormap_raw.getLookupTable())
         self.heatmap_bt0.setLookupTable(colormap_bt.getLookupTable())
-        self.heatmap_emp0.setLookupTable(colormap_emp.getLookupTable(-1.0,1.0,256))
         self.heatmap_diff0.setLookupTable(colormap_diff.getLookupTable(-1.0,1.0,256))
 
-        
         ## PORT 1
         self.heatmap_raw1.setLookupTable(colormap_raw.getLookupTable())
         self.heatmap_bt1.setLookupTable(colormap_bt.getLookupTable())
-        self.heatmap_emp1.setLookupTable(colormap_emp.getLookupTable(-1.0,1.0,256))
         self.heatmap_diff1.setLookupTable(colormap_diff.getLookupTable(-1.0,1.0,256))
 
         self.absScaleMin_RAW = 0
@@ -230,7 +220,6 @@ class csi_data_graphical_window(QMainWindow):
         self.timer.timeout.connect(self.update_graph)
         self.timer.start(0) # 0 >> 100
 
-
         # SETTING BUTTON
         self.pushButton = QPushButton("정지 상태")
         self.pushButton.setStyleSheet("background-color: gray; color: black;")
@@ -257,22 +246,16 @@ class csi_data_graphical_window(QMainWindow):
 
         self.csi_raw_abs_array0 = csi_raw_data_array0
         self.csi_bt_abs_array0 = csi_bt_data_array0
-        self.csi_emp_abs_array0 = csi_emp_data_array0
         self.csi_diff_abs_array0 = csi_diff_data_array0
         self.heatmap_raw0.setImage(self.csi_raw_abs_array0, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
         self.heatmap_bt0.setImage(self.csi_bt_abs_array0, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
-        self.heatmap_emp0.setImage(self.csi_emp_abs_array0, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
         self.heatmap_diff0.setImage(self.csi_diff_abs_array0, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
 
         self.csi_raw_abs_array1 = csi_raw_data_array1
         self.csi_bt_abs_array1 = csi_bt_data_array1
-        self.csi_emp_abs_array1 = csi_emp_data_array1
         self.csi_diff_abs_array1 = csi_diff_data_array1
-
-
         self.heatmap_raw1.setImage(self.csi_raw_abs_array1, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
         self.heatmap_bt1.setImage(self.csi_bt_abs_array1, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
-        self.heatmap_emp1.setImage(self.csi_emp_abs_array1, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
         self.heatmap_diff1.setImage(self.csi_diff_abs_array1, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
 
     def update_graph(self):
@@ -281,11 +264,9 @@ class csi_data_graphical_window(QMainWindow):
         # PORT 0
         self.csi_raw_abs_array0 = csi_raw_data_array0
         self.csi_bt_abs_array0 = csi_bt_data_array0
-        self.csi_emp_abs_array0 = csi_emp_data_array0
         self.csi_diff_abs_array0 = csi_diff_data_array0
         self.heatmap_raw0.setImage(self.csi_raw_abs_array0, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
         self.heatmap_bt0.setImage(self.csi_bt_abs_array0, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
-        self.heatmap_emp0.setImage(self.csi_emp_abs_array0, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
         self.heatmap_diff0.setImage(self.csi_diff_abs_array0, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
 
         # PORT 1
@@ -295,7 +276,6 @@ class csi_data_graphical_window(QMainWindow):
         self.csi_diff_abs_array1 = csi_diff_data_array1
         self.heatmap_raw1.setImage(self.csi_raw_abs_array1, levels=(self.absScaleMin_RAW, self.absScaleMax_RAW))
         self.heatmap_bt1.setImage(self.csi_bt_abs_array1, levels=(self.absScaleMin_BT, self.absScaleMax_BT))
-        self.heatmap_emp1.setImage(self.csi_emp_abs_array1, levels=(self.absScaleMin_Input, self.absScaleMax_Input))
         self.heatmap_diff1.setImage(self.csi_diff_abs_array1, levels=(self.absScaleMin_Diff, self.absScaleMax_Diff))
 
         self.label1.setText(str(LABELS['file']))
@@ -310,10 +290,11 @@ class csi_data_graphical_window(QMainWindow):
             self.pushButton.setStyleSheet("background-color: gray; color: white;")
         else:
             isStarted.value = True
-            if empty_process:
-                isEmpty.value = True # Empty
-            else:
-                print("\n ⏰ ")
+            # if empty_process:
+            #     isEmpty.value = True # Empty
+            # else:
+                # print("\n ⏰ ")
+            print("\n ⏰ ")
             self.pushButton.setText("취득중 상태")
             self.pushButton.setStyleSheet("background-color: blue; color: black;")
         self.isButtonStopped = not self.isButtonStopped
@@ -368,8 +349,9 @@ def remove_null_csi(csi_input):
     return csi_data
 
 
-def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
-    global prev_amplitude
+def csi_preprocessing(raw_data, port_num, return_type = "raw", empty_csi = None):
+    global prev_amplitude0
+    global prev_amplitude1
 
     amplitude = get_amplitude(raw_data, True) # 1. Amplitude
 
@@ -380,20 +362,7 @@ def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
     if return_type == "bt":
         amplitude = butterworth_filter_BT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') /20.0
         return amplitude
-    
-    if return_type == "empty" :
-        # 2. ButterWorth
-        amplitude = butterworth_filter_INPUT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
-        # 3. Side Remove
-        amplitude = amplitude[5:-5,:] 
 
-        # 4. Empty Subtract
-        if empty_csi is not None:
-            empty_csi = np.array(empty_csi)
-            amplitude = np.subtract(amplitude, empty_csi) * 3
-        return amplitude
-
-    
     if return_type == "diff": 
         # 2. Butterworth
         amplitude = butterworth_filter_INPUT(amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') /20.0
@@ -402,14 +371,25 @@ def csi_preprocessing(raw_data, return_type = "raw", empty_csi = None):
         amplitude = amplitude[5:-5,:]
 
         # 4. Previous Subtract
-        if prev_amplitude is None:
-            prev_amplitude = amplitude  # 처음 들어오는 데이터는 prev_amplitude에 저장
+        if prev_amplitude0 is None and port_num == 0:
+            prev_amplitude0 = amplitude  # 처음 들어오는 데이터는 prev_amplitude에 저장
+            amplitude = amplitude - prev_amplitude0
+            return amplitude  # 그대로 반환
+        elif prev_amplitude1 is None and port_num == 1:
+            prev_amplitude1 = amplitude  # 처음 들어오는 데이터는 prev_amplitude에 저장
+            amplitude = amplitude - prev_amplitude1
             return amplitude  # 그대로 반환
 
-        averaged_amplitude = np.mean(np.array(prev_amplitude), axis=0)  # 이전 amplitude의 평균 계산
-        diff_amplitude = np.subtract(amplitude, averaged_amplitude) * 3  # 현재 데이터와 이전 평균 데이터의 차이 계산
-        prev_amplitude = amplitude  # 현재 amplitude를 prev_amplitude에 저장
-        return diff_amplitude
+        if port_num == 0:
+            averaged_amplitude = np.mean(np.array(prev_amplitude0), axis=0)  # 이전 amplitude의 평균 계산
+            diff_amplitude = np.subtract(amplitude, averaged_amplitude) * 3  # 현재 데이터와 이전 평균 데이터의 차이 계산
+            prev_amplitude0 = amplitude  # 현재 amplitude를 prev_amplitude에 저장
+            return diff_amplitude
+        elif port_num == 1:
+            averaged_amplitude = np.mean(np.array(prev_amplitude1), axis=0)  # 이전 amplitude의 평균 계산
+            diff_amplitude = np.subtract(amplitude, averaged_amplitude) * 3  # 현재 데이터와 이전 평균 데이터의 차이 계산
+            prev_amplitude1 = amplitude  # 현재 amplitude를 prev_amplitude에 저장
+            return diff_amplitude
 
 def predict(model, X, classes:list):
     softmax = torch.nn.Softmax(dim=1)
@@ -436,28 +416,41 @@ def csi_data_read_parse(ser):
     global MAX_VALUE
     global MIN_VALUE
     global T_type
-    global isEmpty
+    # global isEmpty
     global sequence_len
     global acq_bool
     global LABELS
-    global empty_process
+    # global empty_process
     
     total_data = [] 
     total_acq_data = []
 
+
     ser_str = str(ser)
     match = re.search(r"port='(/dev/tty\w+)'", ser_str)
     port_name = match.group(1).split("/")[-1]
-    port_num = int(port_name.replace("ttyACM", ""))
+    port_num = int(port_name.replace("ttyACM", "")) % 2
 
     FILENAME_TIMES = 0
     start_time = None  # 초기화
 
+    ## CSV FILE ##
+    filename_time = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    if acq_bool:
+        if port_num == 0:
+            csvFileName = f"{CSI_SAVE_PATH}/{filename_time}_PORT{port_num}.csv"
+        elif port_num == 1:
+            csvFileName = f"{CSI_SAVE_PATH}/{filename_time}_PORT{port_num}.csv"
+        csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+        csvWriter = csv.writer(csvFile)
+
+    prev_csi_raw_data = None
+
     while True: 
-        strings = str(ser.readline())
-        if not strings:
-            break
         strings = ser.readline() # READ CSI DATA
+        if not str(strings):
+            break
+
         result = re.findall(r"-?\d+", strings.decode("utf-8")) # Demical Number Extract(String Type) 
         csi_raw_data = list(map(int, result))[27:] # Int list type
         acquisition_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] 
@@ -469,70 +462,22 @@ def csi_data_read_parse(ser):
             continue
         excep_amp = get_amplitude(csi_raw_data)
         if sum(excep_amp[128:132]) > 0.0 or excep_amp[6] == 0.0:
-            continue
+            csi_raw_data = prev_csi_raw_data
+
         meta_data = [result[6], result[9], result[17], result[21]]
         # 3(rssi), 6(mcs), 14(noise_floor), 18(local_timestamp) index +3
 
+        
+        prev_csi_raw_data = csi_raw_data
+        # RAW DATA ACQUISITION
+        if (acq_bool == True) and (isStarted.value == True): 
+            csvWriter.writerow([acquisition_time] +  meta_data + csi_raw_data)
+
         if isStarted.value == True:
-            # 2. EMPTY PROCESS #
-            if isEmpty.value:
-
-                if GET_EMPTY_INFO_START_TIME == True:
-                    print(f"⏰ {port_name} 실내 공간 정보 취득을 위해 30초 이내 퇴실해주세요.")
-                    time.sleep(1) # waiting time
-                    print(f" {port_name} 지금부터 실내 공간 정보를 취득하겠습니다.")
-                    empty_space = []
-                    print(datetime.datetime.now())
-                    GET_EMPTY_INFO_START_TIME = False
-
-                total_data.append(csi_raw_data)
-
-
-
-                if GET_START_TIME == True: 
-                    start_time = datetime.datetime.now() 
-                    GET_START_TIME = False 
-                
-                if len(total_data) == sequence_len:
-                    if start_time is not None and (datetime.datetime.now() - start_time).total_seconds() <= 2.0:   
-                        GET_START_TIME = True 
-                        print(len(empty_space), port_name)         
-                        if isEmpty.value and len(empty_space) < 10: # num of total_data(SEC)
-                            total_data = np.array(total_data)
-                            # 1. Amplitude
-                            emp_even_elements = total_data[:,::2]
-                            emp_odd_elements = total_data[:,1::2]
-                            emp_amplitude = np.sqrt(np.square(emp_even_elements) + np.square(emp_odd_elements))
-                            # 2. Butterworth
-                            emp_amplitude = butterworth_filter(emp_amplitude, cutoff=0.4, fs=5, order=1, filter_type='low') / 20.0
-                            # 3. cut down from 5 to -5 -> 50 sequence
-                            empty_space.append(emp_amplitude[5:-5,:])
-                    
-                            total_data = []
-                            LABELS = dict(zip(['file','occ', 'loc', 'act'], [len(empty_space), "실내","정보","취득"]))
-
-                        else:
-                            isEmpty.value = False
-                            total_data = [] 
-                            if port_name == "ttyACM0":
-                                empty_feature0 = np.mean(empty_space, axis=0)
-                                print(f"⏰ PORT0의 실내 공간{np.shape(empty_feature0)} 정보 취득이 완료되었습니다.")
-                            elif port_name == "ttyACM1":
-                                empty_feature1 = np.mean(empty_space, axis=0)
-                                print(f"⏰ PORT1의 실내 공간{np.shape(empty_feature1)} 정보 취득이 완료되었습니다.")
-                            
-                    else: 
-                        GET_START_TIME = True 
-                        total_data = [] 
-                continue
-
-            if not isEmpty.value:
-                empty_process = False
 
             GET_START_TIME = True 
             total_data.append(csi_raw_data) # FOR PREDICT & VISUALIZE
             total_acq_data.append([acquisition_time] +  meta_data + csi_raw_data) # FOR ACQUISTION
-
 
             if GET_START_TIME == True:
                 start_time = datetime.datetime.now()
@@ -543,40 +488,40 @@ def csi_data_read_parse(ser):
                 if start_time is not None and (datetime.datetime.now() - start_time).total_seconds() <= 0.5:
                     GET_START_TIME = True
 
+                    # total_data = np.array(total_data)[:60,:]
                     # PREPROCESSING 
-                    vis_data_raw = csi_preprocessing(total_data)
-                    vis_data_bt = csi_preprocessing(total_data, 'bt')
-                    vis_data_diff = csi_preprocessing(total_data, 'diff')
-                    # vis_data_emp = csi_preprocessing(total_data, 'empty', empty_feature) # 50 192
+                    vis_data_raw = csi_preprocessing(total_data, port_num)
+                    vis_data_bt = csi_preprocessing(total_data, port_num, 'bt')
+                    vis_data_diff = csi_preprocessing(total_data, port_num, 'diff')
+                    # vis_data_emp = csi_preprocessing(total_data, port_num, 'empty', empty_feature) # 50 192
 
                     vis_emp = np.zeros_like(vis_data_raw) # 5. null data remove # 50 166
                     vis_diff = np.zeros_like(vis_data_raw)
-                    # vis_emp[5:-5,:]=vis_data_emp
+                    # vis_emp[5:-5,:] = vis_data_emp
                     vis_diff[5:-5, :] = vis_data_diff
 
                     total_data = []
                     print("\n")
+                    FILENAME_TIMES += 1
 
-                    # RAW DATA ACQUISITION
-                    if acq_bool: 
-                        if port_name == "ttyACM0":
-                            csvFileName = f"{CSI_SAVE_PATH_0}/{FILENAME_TIMES}.csv"
-                            csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
-                            csvWriter = csv.writer(csvFile) 
-                            csvWriter.writerows(total_acq_data)
-                            FILENAME_TIMES +=1 
-                            csvFile.close()
-                        elif port_name == "ttyACM1":
-                            csvFileName = f"{CSI_SAVE_PATH_1}/{FILENAME_TIMES}.csv"
-                            csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
-                            csvWriter = csv.writer(csvFile) 
-                            csvWriter.writerows(total_acq_data)
-                            FILENAME_TIMES +=1 
-                            csvFile.close()
+                    # # RAW DATA ACQUISITION
+                    # if acq_bool: 
+                    #     if port_num == 0:
+                    #         csvFileName = f"{CSI_SAVE_PATH_0}/{FILENAME_TIMES}.csv"
+                    #         csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                    #         csvWriter = csv.writer(csvFile) 
+                    #         csvWriter.writerows(total_acq_data)
+                    #         FILENAME_TIMES +=1 
+                    #     elif port_num == 1:
+                    #         csvFileName = f"{CSI_SAVE_PATH_1}/{FILENAME_TIMES}.csv"
+                    #         csvFile = open(csvFileName, 'w', newline='', encoding='utf-8')
+                    #         csvWriter = csv.writer(csvFile) 
+                    #         csvWriter.writerows(total_acq_data)
+                    #         FILENAME_TIMES +=1 
                     
                     # VISUALIZATION
 
-                    if port_name == "ttyACM0":
+                    if port_num == 0:
                         csi_raw_data_array0[:-sequence_len] = csi_raw_data_array0[sequence_len:]
                         csi_raw_data_array0[-sequence_len:] = vis_data_raw[:, :]
                         csi_bt_data_array0[:-sequence_len] = csi_bt_data_array0[sequence_len:]
@@ -585,7 +530,7 @@ def csi_data_read_parse(ser):
                         # csi_emp_data_array0[-sequence_len:] = vis_emp[:, :]
                         csi_diff_data_array0[:-sequence_len] = csi_diff_data_array0[sequence_len:]
                         csi_diff_data_array0[-sequence_len:] = vis_diff[:, :]
-                    elif port_name == "ttyACM1":
+                    elif port_num == 1:
                         csi_raw_data_array1[:-sequence_len] = csi_raw_data_array1[sequence_len:]
                         csi_raw_data_array1[-sequence_len:] = vis_data_raw[:, :]
                         csi_bt_data_array1[:-sequence_len] = csi_bt_data_array1[sequence_len:]
@@ -600,16 +545,10 @@ def csi_data_read_parse(ser):
                     input_data = remove_null_csi(vis_data_diff) #or vis_data_emp or vis_data_diff
                     inf_data = torch.tensor(input_data, dtype=torch.float32).to(device)
                     inf_time = str(datetime.datetime.now())
-                    print("----------------------------------")
-                    print(port_num)
-                    print(inf_time)
                     occ, occ_score = predict(model_occ, inf_data, ["EMPTY", "OCCUPIED"])
                     loc, loc_score = predict(model_loc, inf_data, ["AP", "ESP"])
-                    print(f"{occ} ({round(occ_score,2)})")
-                    print(f"LOC: {loc} ({round(loc_score,2)})")
                     act, act_score = predict(model_act, inf_data, ["SIT", "STAND", "WALK"])
-                    print(f"ACT: {act} ({round(act_score,2)})") 
-                    print("----------------------------------") 
+                    print(f"----------------------------------\n{port_num} inf time : {inf_time} \n OCC:{occ} ({round(occ_score,2)}) \n LOC: {loc} ({round(loc_score,2)}) \n ACT: {act} ({round(act_score,2)})\n----------------------------------")
                     LABELS = dict(zip(['file','occ', 'loc', 'act'], [FILENAME_TIMES, occ, loc, act]))
                     
                     # MQTT
@@ -650,7 +589,7 @@ if __name__ == '__main__':
 
     # SHARING VALIABLES
     isStarted = multiprocessing.Value('b', False)
-    isEmpty = multiprocessing.Value('b', False)    
+    # isEmpty = multiprocessing.Value('b', False)    
     labelkey = multiprocessing.Value('i', 0)
 
     # STARTS UP WINDOWS(GUI)
