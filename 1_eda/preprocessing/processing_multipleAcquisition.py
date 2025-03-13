@@ -29,21 +29,33 @@ def butterworth_filter(data, cutoff, fs, order, filter_type='low'):
     filtered_data = np.ascontiguousarray(filtered_data) # 음수 스트라이드를 방지하기 위해 복사
     return filtered_data
 
-# /Users/dongwookang/visual
-def process_csv_files(file_name, slide, window, prevtime):
+# 디렉토리 내 모든 CSV 파일 처리
+def process_all_csv_files(directory, slide, window, prevtime):
+    csv_files = [f for f in os.listdir(directory) if f.endswith(".csv")]  # .csv 파일 리스트 가져오기
+    print(csv_files)
+    output_dir = os.path.join(directory, "output")  # 결과 저장 폴더
+
+    os.makedirs(output_dir, exist_ok=True)  # 저장 디렉토리 생성
+
+    for file_name in csv_files:
+        file_path = os.path.join(directory, file_name)
+        process_csv_files(file_path, output_dir, slide, window, prevtime)
+
+def process_csv_files(file_path, output_dir, slide, window, prevtime):
+    file_name = os.path.splitext(os.path.basename(file_path))[0]  # 확장자 제거한 파일명
+    extract_file_path = os.path.join(output_dir, file_name)  # 개별 파일 저장 디렉토리
+    os.makedirs(extract_file_path, exist_ok=True)  # 파일별 디렉토리 생성
+
+    print(f"📂 Processing: {file_name}")
 
     # Load the data
-    result = []
-    load_file_path = os.path.join("")  # 파일 경로
-    extract_file_path = os.path.join(f"/{file_name}") # 저장될 디렉토리 경로
-    os.makedirs(extract_file_path, exist_ok=True)
-
-    df = pd.read_csv(load_file_path + file_name + ".csv", header=None)
+    df = pd.read_csv(file_path, header=None)
     raw_data = np.array(df)
 
     # 0. remove unnecessary columns (meta data)
     raw_data = raw_data[:, 5:]
     raw_data = np.array(raw_data, dtype=float)
+
     # 1. Amplitude Calculation
     amplitude_data = amplitude_calculation(raw_data)
 
@@ -70,24 +82,27 @@ def process_csv_files(file_name, slide, window, prevtime):
         window_data = butterworth_filter(amplitude_data[start_win:end_win, :],cutoff=0.3, fs=10, order=1, filter_type='low')
         diff_data = window_data - prev_data_mean
 
-        result.append(diff_data)
+        # Remove Null Subcarriers
+        remove_indices = np.concatenate((np.arange(0,6), np.arange(32,33), np.arange(59, 66), np.arange(123,134), np.arange(191,192)))
+        csi_data = np.delete(diff_data, remove_indices, axis=1)
+        result.append(csi_data)
 
         # 파일 저장
         save_path = os.path.join(extract_file_path, f"{file_name}_{i+1}.csv")
-        np.savetxt(save_path, diff_data, delimiter=",", fmt='%f')
-        print(f"저장 완료: {save_path}, Shape: {diff_data.shape}")
+        np.savetxt(save_path, csi_data, delimiter=",", fmt='%f')
+        print(f"저장 완료: {save_path}, Shape: {csi_data.shape}")
     
     return result
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("slide", type=str)
+    parser.add_argument("slide", type=int)
     parser.add_argument("width", type=int)
     parser.add_argument("prevtime", type=int)
     args = parser.parse_args()
 
-    file_name = input("Enter the file name: ")
-    process_csv_files(file_name, slide=args.slide, window=args.width, prevtime=args.prevtime)
+    dir_name = input("데이터가 있는 절대 경로 (/Users/csi/): ")
+    process_all_csv_files(dir_name, slide=args.slide, window=args.width, prevtime=args.prevtime)
 
 
 
