@@ -80,11 +80,11 @@ def process_csv_files(file_path, output_dir, slide, window, prevtime):
         prev_data_mean = np.mean(prev_data, axis=0)
 
         window_data = butterworth_filter(amplitude_data[start_win:end_win, :],cutoff=0.3, fs=10, order=1, filter_type='low')
-        diff_data = window_data - prev_data_mean
+        diff_data = np.subtract(window_data, prev_data_mean) * 3 # 현재 데이터와 이전 데이터와 차이를 계산
 
         # Remove Null Subcarriers
         remove_indices = np.concatenate((np.arange(0,6), np.arange(32,33), np.arange(59, 66), np.arange(123,134), np.arange(191,192)))
-        csi_data = np.delete(diff_data, remove_indices, axis=1)
+        csi_data = np.delete(diff_data, remove_indices, axis=1) 
         result.append(csi_data)
 
         # 파일 저장
